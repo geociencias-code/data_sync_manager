@@ -3,7 +3,7 @@ REM ============================================================================
 REM Script para configurar autoinicio tras reinicio en Windows
 REM Crea un script VBS silencioso en la carpeta Startup del usuario
 REM ==============================================================================
-title DataSync Pro - Configurador de Autoinicio en Windows
+title DataSync Manager - Configurador de Autoinicio en Windows
 color 0B
 
 echo ==============================================================================

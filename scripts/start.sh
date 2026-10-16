@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ==============================================================================
-# Script de inicio para DataSync Pro con Entorno Virtual
+# Script de inicio para DataSync Manager con Entorno Virtual
 # ==============================================================================
 set -e
 
@@ -21,5 +21,5 @@ fi
 export HOST="${HOST:-0.0.0.0}"
 export PORT="${PORT:-8000}"
 
-echo "Iniciando DataSync Pro con: $PYTHON_EXEC ..."
+echo "Iniciando DataSync Manager con: $PYTHON_EXEC ..."
 exec "$PYTHON_EXEC" main.py

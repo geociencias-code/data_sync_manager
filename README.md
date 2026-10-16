@@ -1,4 +1,4 @@
-# 🚀 DataSync Pro: SFTP ➔ S3 / FTP Manager con Rclone y SQLite
+# 🚀 DataSync Manager: SFTP ➔ S3 / FTP Manager con Rclone y SQLite
 
 Aplicación web desarrollada en Python con FastAPI y Rclone para la sincronización continua, mapeo y transferencia resiliente de datos desde servidores SFTP hacia buckets de almacenamiento S3 (AWS S3, MinIO, Cloudflare R2, Wasabi) o servidores FTP estándar.
 

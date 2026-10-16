@@ -384,7 +384,7 @@ async def ping_single_task_endpoints(task_id: int, target: Optional[str] = Query
 @router.websocket("/ws")
 async def websocket_live_channel(websocket: WebSocket):
     """
-    Live real-time WebSocket connection for DataSync Pro frontend.
+    Live real-time WebSocket connection for DataSync Manager frontend.
     Pushes status updates, task runner events, and file transfer progress
     without requiring constant client-side HTTP polling.
     """
@@ -671,7 +671,7 @@ async def install_os_service():
         service_file = user_systemd / "syncdata-sftp-s3.service"
         
         content = f"""[Unit]
-Description=DataSync Pro SFTP to S3/FTP Manager
+Description=DataSync Manager SFTP to S3/FTP Manager
 After=network.target
 
 [Service]

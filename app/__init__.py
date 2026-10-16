@@ -1,1 +1,1 @@
-# DataSync Pro App Package
+# DataSync Manager App Package

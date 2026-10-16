@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Automated Setup & Dependency Downloader for DataSync Pro
+Automated Setup & Dependency Downloader for DataSync Manager
 Compatible with macOS, Linux, and Windows.
 
 Tasks performed:
@@ -333,7 +333,7 @@ def step_init_database():
 def main():
     print(f"\n{BOLD}================================================================{RESET}")
     print(f"{BOLD}  🚀 ASISTENTE DE INSTALACIÓN Y CONFIGURACIÓN AUTOMÁTICA{RESET}")
-    print(f"{BOLD}     DataSync Pro: SFTP ➔ S3 / FTP Data Sync Manager{RESET}")
+    print(f"{BOLD}     DataSync Manager: SFTP ➔ S3 / FTP Data Sync Manager{RESET}")
     print(f"{BOLD}================================================================{RESET}\n")
 
     # Step 0: Ensure running inside a dedicated virtual environment (PEP 668 compliance)

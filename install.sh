@@ -7,6 +7,9 @@ set -e
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 cd "$DIR"
 
+echo "=================================================================="
+echo "  Iniciando Instalador Automático de DataSync Manager (Linux/macOS)"
+echo "=================================================================="
 echo "Verificando instalación de Python 3..."
 if command -v python3 &>/dev/null; then
     SYS_PYTHON="python3"

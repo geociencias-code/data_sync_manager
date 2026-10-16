@@ -1,1 +1,1 @@
-# DataSync Pro API Package
+# DataSync Manager API Package

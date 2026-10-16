@@ -2,7 +2,7 @@
 # Instalador automático para Windows PowerShell
 # ==============================================================================
 Write-Host "==================================================================" -ForegroundColor Cyan
-Write-Host "  Iniciando Instalador Automatico de DataSync Pro (PowerShell)    " -ForegroundColor Cyan
+Write-Host "  Iniciando Instalador Automatico de DataSync Manager (PowerShell)" -ForegroundColor Cyan
 Write-Host "==================================================================" -ForegroundColor Cyan
 Write-Host ""
 

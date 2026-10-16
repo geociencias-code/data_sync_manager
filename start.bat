@@ -2,7 +2,7 @@
 REM ==============================================================================
 REM Lanzador de la aplicación para Windows con Entorno Virtual
 REM ==============================================================================
-title DataSync Pro - SFTP to S3/FTP Server
+title DataSync Manager - SFTP to S3/FTP Server
 color 0A
 
 cd /d "%~dp0"
@@ -26,7 +26,7 @@ if exist "venv\Scripts\python.exe" (
 )
 
 echo ==============================================================================
-echo   Iniciando DataSync Pro en Windows (%PYTHON_CMD%)...
+echo   Iniciando DataSync Manager en Windows (%PYTHON_CMD%)...
 echo   Servidor Web: http://localhost:8000
 echo ==============================================================================
 echo.

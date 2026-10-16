@@ -2,11 +2,11 @@
 REM ==============================================================================
 REM Instalador automático para Windows (Command Prompt / Doble Clic)
 REM ==============================================================================
-title DataSync Pro - Instalador de Dependencias
+title DataSync Manager - Instalador de Dependencias
 color 0B
 
 echo ==============================================================================
-echo   Iniciando Instalador Automatico de DataSync Pro para Windows
+echo   Iniciando Instalador Automatico de DataSync Manager para Windows
 echo ==============================================================================
 echo.
 

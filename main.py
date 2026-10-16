@@ -88,7 +88,7 @@ if __name__ == "__main__":
     interfaces = get_all_network_interfaces()
     
     print(f"\n=======================================================")
-    print(f"🚀 DataSync Pro: SFTP ➔ S3 / FTP Manager")
+    print(f"🚀 DataSync Manager: SFTP ➔ S3 / FTP Manager")
     print(f"📡 Servidor activo en puerto: {port}")
     print(f"🌐 Enlaces de acceso detectados:")
     for item in interfaces:
