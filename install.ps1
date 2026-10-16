@@ -29,5 +29,7 @@ if ($LASTEXITCODE -eq 0) {
     Write-Host "`n[EXITO] Instalación completada. Puedes iniciar la app ejecutando: .\start.bat o python main.py" -ForegroundColor Green
 } else {
     Write-Host "`n[ERROR] Falló la instalación con código de salida: $LASTEXITCODE" -ForegroundColor Red
+    Write-Host "[TIP] Si el error fue al descargar Rclone, puedes instalarlo fácilmente en Windows mediante:" -ForegroundColor Yellow
+    Write-Host "      winget install Rclone.Rclone" -ForegroundColor Cyan
 }
 

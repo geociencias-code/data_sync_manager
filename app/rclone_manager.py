@@ -34,6 +34,20 @@ class RcloneManager:
         found = shutil.which("rclone") or shutil.which("rclone.exe")
         if found:
             return found
+
+        if os.name == "nt":
+            from pathlib import Path
+            home = Path.home()
+            known_paths = [
+                home / "AppData" / "Local" / "Microsoft" / "WinGet" / "Links" / "rclone.exe",
+                Path("C:/Program Files/Rclone/rclone.exe"),
+                Path("C:/rclone/rclone.exe"),
+                home / "scoop" / "shims" / "rclone.exe",
+                Path("C:/ProgramData/chocolatey/bin/rclone.exe"),
+            ]
+            for kp in known_paths:
+                if kp.exists():
+                    return str(kp)
             
         return exe_name
 

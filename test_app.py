@@ -164,7 +164,7 @@ class TestDataSyncApp(unittest.TestCase):
         # 1. UI Root
         res = self.client.get("/")
         self.assertEqual(res.status_code, 200)
-        self.assertIn("DataSync Pro", res.text)
+        self.assertIn("DataSync Manager", res.text)
 
         # 2. Status
         res = self.client.get("/api/status")
