@@ -1,0 +1,2678 @@
+<!DOCTYPE html>
+<html lang="es" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DataSync Pro</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        brand: {
+                            50: '#eef2ff',
+                            500: '#6366f1',
+                            600: '#4f46e5',
+                            700: '#4338ca',
+                        },
+                        darkbg: '#0f172a',
+                        darkcard: '#1e293b',
+                        darkborder: '#334155'
+                    }
+                }
+            }
+        }
+    </script>
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        @keyframes pulse-fast {
+            0%, 100% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.5; transform: scale(1.1); }
+        }
+        .pulse-dot {
+            animation: pulse-fast 1.5s infinite;
+        }
+    </style>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen font-sans flex flex-col antialiased selection:bg-indigo-500 selection:text-white">
+
+    <!-- Top Navigation Header -->
+    <header class="bg-slate-900/80 backdrop-blur border-b border-slate-800 sticky top-0 z-40">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3.5 flex flex-wrap items-center justify-between gap-4">
+            
+            <!-- Logo & Title -->
+            <div class="flex items-center space-x-3">
+                <div class="p-2 bg-gradient-to-tr from-indigo-600 to-violet-500 rounded-xl shadow-lg shadow-indigo-500/25">
+                    <i data-lucide="arrow-left-right" class="w-6 h-6 text-white"></i>
+                </div>
+                <div>
+                    <h1 class="text-lg font-bold tracking-tight text-white flex items-center gap-2">
+                        DataSync Pro
+                        <span class="text-xs px-2 py-0.5 rounded-full bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 font-medium">SFTP ➔ S3 / FTP</span>
+                    </h1>
+                    <div class="flex items-center gap-2 mt-0.5">
+                        <button type="button" onclick="openNetworkModal()" title="Ver todas las direcciones IP y enlaces disponibles para acceder desde otros equipos" class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-indigo-950/60 hover:bg-indigo-900/70 border border-indigo-500/30 text-[11px] text-indigo-300 font-mono cursor-pointer transition shadow-sm">
+                            <i data-lucide="network" class="w-3.5 h-3.5 text-indigo-400"></i>
+                            <span class="font-sans font-medium text-slate-300">IPs de Red:</span>
+                            <span id="primary-ip-badge" class="font-bold text-white">detectando...</span>
+                            <i data-lucide="chevron-down" class="w-3 h-3 text-indigo-400"></i>
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Global Status & Quick Controls -->
+            <div class="flex items-center flex-wrap gap-2.5">
+                <!-- WebSocket Live Connection Badge -->
+                <div id="ws-badge" class="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-emerald-950/40 border border-emerald-500/30 text-xs font-semibold text-emerald-400 shadow-sm" title="Canal WebSocket en tiempo real activo (cero peticiones HTTP constantes)">
+                    <span id="ws-dot" class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                    <span id="ws-text">En Vivo</span>
+                </div>
+
+                <!-- State Badge -->
+                <div id="state-pill" class="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-slate-800 border border-slate-700 text-xs font-semibold">
+                    <span id="state-indicator" class="w-2.5 h-2.5 rounded-full bg-slate-500"></span>
+                    <span id="state-text">CARGANDO...</span>
+                </div>
+
+                <!-- Botón: Escanear todas las tareas (solo escanear archivos) -->
+                <button id="btn-scan" onclick="scanAllTasksOnly()" title="Escanear y descubrir archivos en todas las tareas sin iniciar la sincronización" class="flex flex-row items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold shadow-md shadow-indigo-900/30 transition whitespace-nowrap">
+                    <i data-lucide="scan-line" class="w-3.5 h-3.5 shrink-0"></i>
+                    <span>Escanear</span>
+                </button>
+
+                <!-- Control Buttons (formato e icono horizontal) -->
+                <button id="btn-start" onclick="controlTask('start')" class="hidden flex-row items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold shadow-md shadow-emerald-900/30 transition whitespace-nowrap">
+                    <i data-lucide="play" class="w-3.5 h-3.5 fill-current shrink-0"></i>
+                    <span>Iniciar</span>
+                </button>
+                <button id="btn-pause" onclick="controlTask('pause')" class="hidden flex-row items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-500 text-white text-xs font-semibold shadow-md shadow-amber-900/30 transition whitespace-nowrap">
+                    <i data-lucide="pause" class="w-3.5 h-3.5 fill-current shrink-0"></i>
+                    <span>Pausar</span>
+                </button>
+                <button id="btn-resume" onclick="controlTask('resume')" class="hidden flex-row items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold shadow-md shadow-indigo-900/30 transition whitespace-nowrap">
+                    <i data-lucide="play" class="w-3.5 h-3.5 fill-current shrink-0"></i>
+                    <span>Reanudar</span>
+                </button>
+                <button id="btn-stop" onclick="controlTask('stop')" class="hidden flex-row items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-500 text-white text-xs font-semibold shadow-md shadow-rose-900/30 transition whitespace-nowrap">
+                    <i data-lucide="square" class="w-3.5 h-3.5 fill-current shrink-0"></i>
+                    <span>Detener</span>
+                </button>
+
+                <div class="h-6 w-px bg-slate-700 hidden sm:block"></div>
+
+                <button onclick="controlTask('sync_now')" title="Forzar sincronización inmediata sin esperar el intervalo" class="flex flex-row items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 text-xs font-medium transition whitespace-nowrap">
+                    <i data-lucide="zap" class="w-3.5 h-3.5 text-amber-400 shrink-0"></i>
+                    <span>Sincronizar Ahora</span>
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Container -->
+    <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 flex-1 w-full space-y-6">
+
+        <!-- Active Transfer Alert Banner (Shown when sync is in progress) -->
+        <div id="transfer-banner" class="hidden bg-gradient-to-r from-indigo-950/70 to-slate-900 border border-indigo-500/30 rounded-xl p-4 shadow-lg backdrop-blur space-y-2.5">
+            <div class="flex items-center justify-between flex-wrap gap-3">
+                <div class="flex items-center space-x-3 min-w-0">
+                    <div class="p-2 bg-indigo-500/20 text-indigo-400 rounded-lg shrink-0">
+                        <i data-lucide="refresh-cw" class="w-5 h-5 animate-spin"></i>
+                    </div>
+                    <div class="min-w-0">
+                        <div class="text-xs uppercase font-bold tracking-wider text-indigo-400 flex items-center gap-2">
+                            <span>Transferencia Activa</span>
+                            <span id="transfer-badge-pct" class="px-2 py-0.5 rounded font-mono text-[10px] bg-indigo-500/30 text-indigo-300 font-bold">0.0%</span>
+                        </div>
+                        <div id="transfer-file-name" class="text-sm font-medium text-slate-200 truncate max-w-xl">Enviando archivo...</div>
+                    </div>
+                </div>
+                <div class="text-xs text-slate-400 flex items-center gap-3">
+                    <span id="transfer-speed-eta" class="font-mono text-indigo-300 text-xs"></span>
+                    <span class="w-2 h-2 rounded-full bg-emerald-400 pulse-dot"></span>
+                    <span class="hidden sm:inline">Procesando...</span>
+                </div>
+            </div>
+            <!-- Live Progress Bar -->
+            <div class="w-full bg-slate-950 rounded-full h-1.5 overflow-hidden border border-slate-800">
+                <div id="transfer-main-bar" class="bg-gradient-to-r from-indigo-500 via-sky-400 to-emerald-400 h-1.5 rounded-full transition-all duration-300" style="width: 0%"></div>
+            </div>
+        </div>
+
+        <!-- Metric KPI Cards -->
+        <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3.5">
+            <!-- Total Files -->
+            <div class="bg-slate-900/60 border border-slate-800/80 rounded-xl p-4 shadow-sm relative overflow-hidden">
+                <div class="flex items-center justify-between text-slate-400 mb-1">
+                    <span class="text-xs font-medium uppercase tracking-wider">Mapeados</span>
+                    <i data-lucide="files" class="w-4 h-4 text-slate-400"></i>
+                </div>
+                <div id="stat-total" class="text-2xl font-bold text-white">0</div>
+                <div id="stat-total-size" class="text-xs text-slate-500 mt-1">0 B totales</div>
+            </div>
+
+            <!-- Completed -->
+            <div class="bg-slate-900/60 border border-emerald-900/30 rounded-xl p-4 shadow-sm relative overflow-hidden">
+                <div class="flex items-center justify-between text-emerald-400 mb-1">
+                    <span class="text-xs font-medium uppercase tracking-wider">Enviados</span>
+                    <i data-lucide="check-circle" class="w-4 h-4 text-emerald-400"></i>
+                </div>
+                <div id="stat-completed" class="text-2xl font-bold text-emerald-300">0</div>
+                <div id="stat-completed-size" class="text-xs text-slate-500 mt-1">0 B enviados</div>
+            </div>
+
+            <!-- In Progress -->
+            <div class="bg-slate-900/60 border border-indigo-900/30 rounded-xl p-4 shadow-sm relative overflow-hidden">
+                <div class="flex items-center justify-between text-indigo-400 mb-1">
+                    <span class="text-xs font-medium uppercase tracking-wider">Enviándose</span>
+                    <i data-lucide="arrow-up-right" class="w-4 h-4 text-indigo-400"></i>
+                </div>
+                <div id="stat-transferring" class="text-2xl font-bold text-indigo-300">0</div>
+                <div class="text-xs text-indigo-400/70 mt-1">En tránsito activo</div>
+            </div>
+
+            <!-- Errors -->
+            <div class="bg-slate-900/60 border border-rose-900/30 rounded-xl p-4 shadow-sm relative overflow-hidden">
+                <div class="flex items-center justify-between text-rose-400 mb-1">
+                    <span class="text-xs font-medium uppercase tracking-wider">Con Error</span>
+                    <i data-lucide="alert-octagon" class="w-4 h-4 text-rose-400"></i>
+                </div>
+                <div id="stat-error" class="text-2xl font-bold text-rose-300">0</div>
+                <div class="text-xs text-rose-400/70 mt-1">Requieren atención</div>
+            </div>
+
+            <!-- Pending -->
+            <div class="bg-slate-900/60 border border-amber-900/30 rounded-xl p-4 shadow-sm relative overflow-hidden col-span-2 sm:col-span-1">
+                <div class="flex items-center justify-between text-amber-400 mb-1">
+                    <span class="text-xs font-medium uppercase tracking-wider">Pendientes</span>
+                    <i data-lucide="clock" class="w-4 h-4 text-amber-400"></i>
+                </div>
+                <div id="stat-pending" class="text-2xl font-bold text-amber-300">0</div>
+                <div class="text-xs text-amber-400/70 mt-1">Esperando en cola</div>
+            </div>
+        </div>
+
+        <!-- Navigation Tabs -->
+        <div class="border-b border-slate-800 flex space-x-6">
+            <button onclick="switchTab('files')" id="tab-btn-files" class="tab-btn pb-3 text-sm font-semibold text-indigo-400 border-b-2 border-indigo-500 flex items-center gap-2">
+                <i data-lucide="table" class="w-4 h-4"></i> Mapeo y Archivos
+            </button>
+            <button onclick="switchTab('tasks')" id="tab-btn-tasks" class="tab-btn pb-3 text-sm font-medium text-slate-400 hover:text-slate-200 border-b-2 border-transparent flex items-center gap-2">
+                <i data-lucide="layers" class="w-4 h-4"></i> Tareas de Sincronización
+            </button>
+            <button onclick="switchTab('contingency')" id="tab-btn-contingency" class="tab-btn pb-3 text-sm font-medium text-slate-400 hover:text-slate-200 border-b-2 border-transparent flex items-center gap-2">
+                <i data-lucide="shield-check" class="w-4 h-4"></i> Contingencia & Reinicios
+            </button>
+            <button onclick="switchTab('logs')" id="tab-btn-logs" class="tab-btn pb-3 text-sm font-medium text-slate-400 hover:text-slate-200 border-b-2 border-transparent flex items-center gap-2">
+                <i data-lucide="file-text" class="w-4 h-4"></i> Registros e Historial
+            </button>
+        </div>
+
+        <!-- ==================== TAB 1: FILES MONITOR ==================== -->
+        <section id="tab-content-files" class="space-y-4">
+            
+            <!-- Controls bar: Search, Filter, Retry All -->
+            <div class="bg-slate-900/60 border border-slate-800 rounded-xl p-3.5 flex flex-wrap items-center justify-between gap-3">
+                <div class="flex items-center flex-wrap gap-2.5 flex-1 min-w-[280px]">
+                    <!-- Search Input -->
+                    <div class="relative flex-1 min-w-[200px]">
+                        <i data-lucide="search" class="w-4 h-4 text-slate-400 absolute left-3 top-2.5"></i>
+                        <input type="text" id="files-search" placeholder="Buscar por nombre, ruta o alias..." oninput="debounceLoadFiles()" class="w-full bg-slate-950 border border-slate-800 rounded-lg pl-9 pr-3 py-1.5 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-indigo-500">
+                    </div>
+
+                    <!-- Task / Alias Filter -->
+                    <select id="files-alias-filter" onchange="loadFiles(1)" class="bg-slate-950 border border-slate-800 rounded-lg px-3 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-indigo-500 font-mono">
+                        <option value="all">Todas las Tareas / Alias</option>
+                    </select>
+
+                    <!-- Status Filter -->
+                    <select id="files-status-filter" onchange="loadFiles(1)" class="bg-slate-950 border border-slate-800 rounded-lg px-3 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-indigo-500">
+                        <option value="all">Todos los Estados</option>
+                        <option value="pending">Pendientes</option>
+                        <option value="transferring">Enviándose</option>
+                        <option value="completed">Enviados (Éxito)</option>
+                        <option value="error">Con Error</option>
+                    </select>
+                </div>
+
+                <div class="flex items-center gap-2">
+                    <button onclick="retryAllErrors()" class="flex items-center gap-1.5 px-3 py-1.5 bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 border border-rose-500/30 rounded-lg text-xs font-medium transition">
+                        <i data-lucide="rotate-ccw" class="w-3.5 h-3.5"></i> Reintentar todos los errores
+                    </button>
+                    <button onclick="loadFiles(currentPage)" title="Refrescar lista" class="p-1.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 rounded-lg text-xs transition">
+                        <i data-lucide="refresh-cw" class="w-4 h-4"></i>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Selection Action Bar (Shown when 1 or more files are checked) -->
+            <div id="selection-action-bar" class="hidden bg-indigo-950/80 border border-indigo-500/40 rounded-xl p-3 flex items-center justify-between shadow-lg backdrop-blur">
+                <div class="flex items-center space-x-2 text-xs text-indigo-200 font-medium">
+                    <i data-lucide="check-square" class="w-4 h-4 text-indigo-400"></i>
+                    <span><strong id="selected-files-count" class="text-white text-sm font-bold">0</strong> archivo(s) seleccionados</span>
+                </div>
+                <div class="flex items-center gap-2">
+                    <button onclick="clearFileSelection()" class="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg text-xs transition">
+                        Desmarcar
+                    </button>
+                    <button onclick="transferSelectedFilesNow()" id="btn-transfer-selected" class="flex items-center gap-1.5 px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-semibold shadow-md shadow-indigo-900/30 transition">
+                        <i data-lucide="upload-cloud" class="w-4 h-4"></i> Enviar Seleccionados Ahora
+                    </button>
+                </div>
+            </div>
+
+            <!-- Files Table -->
+            <div class="bg-slate-900/60 border border-slate-800 rounded-xl overflow-hidden shadow-sm">
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left text-xs text-slate-300">
+                        <thead class="bg-slate-800/60 text-slate-400 uppercase text-[10px] tracking-wider border-b border-slate-800">
+                            <tr>
+                                <th class="px-3 py-3 w-8 text-center">
+                                    <input type="checkbox" id="check-all-files" onchange="toggleSelectAllFiles(this)" class="rounded bg-slate-950 border-slate-700 text-indigo-600 focus:ring-0 cursor-pointer">
+                                </th>
+                                <th class="px-3 py-3">Tarea / Alias</th>
+                                <th class="px-4 py-3">Ruta / Archivo en SFTP</th>
+                                <th class="px-4 py-3">Tamaño</th>
+                                <th class="px-4 py-3">Estado / Progreso</th>
+                                <th class="px-4 py-3">Última Modificación</th>
+                                <th class="px-4 py-3">Intentos</th>
+                                <th class="px-4 py-3">Resultado / Error</th>
+                                <th class="px-4 py-3 text-right">Acción</th>
+                            </tr>
+                        </thead>
+                        <tbody id="files-table-body" class="divide-y divide-slate-800/60 font-mono text-[11px]">
+                            <!-- Rows injected dynamically via JS -->
+                            <tr>
+                                <td colspan="9" class="px-4 py-8 text-center text-slate-500">Cargando base de datos SQLite...</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <!-- Pagination Footer -->
+                <div class="px-4 py-3 bg-slate-900/80 border-t border-slate-800 flex items-center justify-between text-xs text-slate-400">
+                    <div id="pagination-info">Mostrando 0 de 0 archivos</div>
+                    <div class="flex items-center space-x-2">
+                        <button id="btn-prev-page" onclick="changePage(-1)" disabled class="px-2.5 py-1 bg-slate-800 border border-slate-700 rounded text-slate-300 disabled:opacity-40 disabled:cursor-not-allowed">Anterior</button>
+                        <span id="pagination-current">Pág 1 de 1</span>
+                        <button id="btn-next-page" onclick="changePage(1)" disabled class="px-2.5 py-1 bg-slate-800 border border-slate-700 rounded text-slate-300 disabled:opacity-40 disabled:cursor-not-allowed">Siguiente</button>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== TAB 2: MULTI-TASK SYNCHRONIZATION ==================== -->
+        <section id="tab-content-tasks" class="hidden space-y-6">
+            
+            <!-- Top Controls & Action Banner -->
+            <div class="bg-slate-900/60 border border-slate-800 rounded-2xl p-5 flex flex-wrap items-center justify-between gap-4 shadow-sm">
+                <div class="flex items-center space-x-3.5">
+                    <div class="p-3 bg-gradient-to-tr from-indigo-600/20 to-violet-500/20 text-indigo-400 rounded-xl border border-indigo-500/30">
+                        <i data-lucide="layers" class="w-6 h-6"></i>
+                    </div>
+                    <div>
+                        <h2 class="text-base font-bold text-white">Tareas Asíncronas de Sincronización</h2>
+                        <p class="text-xs text-slate-400">Flujos de trabajo independientes para carpetas del NAS (ej. Strain, FBE) hacia S3 o FTP</p>
+                    </div>
+                </div>
+
+                <div class="flex items-center gap-2.5">
+                    <button onclick="openCreateTaskModal()" class="flex items-center gap-1.5 px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-semibold shadow-md shadow-indigo-900/30 transition">
+                        <i data-lucide="plus-circle" class="w-4 h-4"></i> Crear Tarea
+                    </button>
+                </div>
+            </div>
+
+            <!-- Tasks Container (Cards Grid) -->
+            <div id="tasks-container" class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                <!-- Dynamically loaded via loadTasks() -->
+                <div class="col-span-full py-12 text-center text-slate-500 font-mono text-xs">
+                    <i data-lucide="loader" class="w-6 h-6 animate-spin mx-auto mb-2 text-indigo-400"></i>
+                    Cargando tareas activas...
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== TAB 3: CONTINGENCY & REBOOT RECOVERY ==================== -->
+        <section id="tab-content-contingency" class="hidden space-y-6">
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                
+                <!-- Contingency Mechanism Card -->
+                <div class="bg-slate-900/60 border border-slate-800 rounded-xl p-5 space-y-4">
+                    <div class="flex items-center space-x-3 pb-3 border-b border-slate-800">
+                        <div class="p-2.5 bg-emerald-500/10 text-emerald-400 rounded-xl">
+                            <i data-lucide="shield-alert" class="w-6 h-6"></i>
+                        </div>
+                        <div>
+                            <h3 class="text-base font-bold text-white">Mecanismo de Contingencia Activo</h3>
+                            <p class="text-xs text-slate-400">Protección garantizada ante apagones o reinicio imprevisto</p>
+                        </div>
+                    </div>
+
+                    <div class="space-y-3 text-xs text-slate-300 leading-relaxed">
+                        <div class="flex items-start gap-2.5">
+                            <i data-lucide="check" class="w-4 h-4 text-emerald-400 shrink-0 mt-0.5"></i>
+                            <div>
+                                <strong class="text-white">Base de datos SQLite en modo WAL (Write-Ahead Logging):</strong>
+                                <p class="text-slate-400">Las operaciones atómicas garantizan cero corrupción de datos aunque la alimentación se corte abruptamente.</p>
+                            </div>
+                        </div>
+
+                        <div class="flex items-start gap-2.5">
+                            <i data-lucide="check" class="w-4 h-4 text-emerald-400 shrink-0 mt-0.5"></i>
+                            <div>
+                                <strong class="text-white">Detección y Saneamiento Automático de Archivos Interrumpidos:</strong>
+                                <p class="text-slate-400">Al iniciar el sistema, cualquier archivo que haya quedado congelado en estado <code>transferring</code> es recuperado instantáneamente y reencolado a <code>pending</code> para no perder ninguna transferencia.</p>
+                            </div>
+                        </div>
+
+                        <div class="flex items-start gap-2.5">
+                            <i data-lucide="check" class="w-4 h-4 text-emerald-400 shrink-0 mt-0.5"></i>
+                            <div>
+                                <strong class="text-white">Persistencia del Estado del Planificador:</strong>
+                                <p class="text-slate-400">Si la sincronización estaba activa (<code>RUNNING</code>) antes de reiniciarse la máquina, el worker reanudará automáticamente el escaneo y envío.</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- OS Service & Auto-boot Setup Card -->
+                <div class="bg-slate-900/60 border border-slate-800 rounded-xl p-5 space-y-4">
+                    <div class="flex items-center space-x-3 pb-3 border-b border-slate-800">
+                        <div class="p-2.5 bg-indigo-500/10 text-indigo-400 rounded-xl">
+                            <i data-lucide="cpu" class="w-6 h-6"></i>
+                        </div>
+                        <div>
+                            <h3 class="text-base font-bold text-white">Autoinicio en el Sistema Operativo</h3>
+                            <p class="text-xs text-slate-400">Levantar la app automáticamente al encender la computadora</p>
+                        </div>
+                    </div>
+
+                    <div id="service-info-box" class="space-y-3">
+                        <div class="flex items-center justify-between p-3 rounded-lg bg-slate-950 border border-slate-800 text-xs">
+                            <span class="text-slate-400">Estado del Servicio en Sistema:</span>
+                            <span id="service-status-badge" class="px-2 py-0.5 rounded font-medium bg-slate-800 text-slate-400">Consultando...</span>
+                        </div>
+
+                        <div class="text-xs text-slate-300">
+                            Puedes instalar un servicio del sistema (LaunchAgent en macOS o Systemd en Linux) para que la app se ejecute en segundo plano de manera continua:
+                        </div>
+
+                        <button onclick="installSystemService()" class="w-full flex items-center justify-center gap-2 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-semibold shadow-md shadow-indigo-600/30 transition">
+                            <i data-lucide="sparkles" class="w-4 h-4"></i> Instalar como Servicio de Inicio del Sistema
+                        </button>
+
+                        <div class="p-3 bg-slate-950 border border-slate-800 rounded-lg text-[11px] text-slate-400 font-mono space-y-1">
+                            <div class="text-slate-500 font-sans text-[10px] uppercase font-bold">Comando de inicio manual:</div>
+                            <div class="select-all text-indigo-300">python3 main.py</div>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+        </section>
+
+        <!-- ==================== TAB 4: LOGS & HISTORY ==================== -->
+        <section id="tab-content-logs" class="hidden space-y-6">
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                
+                <!-- System Event Logs (2 columns) -->
+                <div class="lg:col-span-2 bg-slate-900/60 border border-slate-800 rounded-xl p-4 space-y-3 flex flex-col h-[550px]">
+                    <div class="flex items-center justify-between pb-2 border-b border-slate-800">
+                        <div class="flex items-center space-x-2">
+                            <i data-lucide="terminal" class="w-4 h-4 text-indigo-400"></i>
+                            <h3 class="text-xs font-bold uppercase tracking-wider text-slate-200">Registro de Eventos en Tiempo Real</h3>
+                        </div>
+                        <button onclick="loadLogs()" class="text-xs text-slate-400 hover:text-slate-200 flex items-center gap-1">
+                            <i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i> Refrescar
+                        </button>
+                    </div>
+
+                    <div id="logs-container" class="flex-1 overflow-y-auto space-y-2 font-mono text-[11px] p-2 bg-slate-950 rounded-lg border border-slate-800/80">
+                        <!-- Logs dynamically injected -->
+                        <div class="text-slate-500 text-center py-4">Cargando registros...</div>
+                    </div>
+                </div>
+
+                <!-- Sync Cycles History (1 column) -->
+                <div class="bg-slate-900/60 border border-slate-800 rounded-xl p-4 space-y-3 flex flex-col h-[550px]">
+                    <div class="flex items-center justify-between pb-2 border-b border-slate-800">
+                        <div class="flex items-center space-x-2">
+                            <i data-lucide="history" class="w-4 h-4 text-emerald-400"></i>
+                            <h3 class="text-xs font-bold uppercase tracking-wider text-slate-200">Historial de Ciclos</h3>
+                        </div>
+                        <button onclick="loadHistory()" class="text-xs text-slate-400 hover:text-slate-200 flex items-center gap-1">
+                            <i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i> Refrescar
+                        </button>
+                    </div>
+
+                    <div id="history-container" class="flex-1 overflow-y-auto space-y-2 text-xs">
+                        <!-- History items dynamically injected -->
+                        <div class="text-slate-500 text-center py-4">Cargando historial...</div>
+                    </div>
+                </div>
+
+            </div>
+        </section>
+
+    </main>
+
+    <!-- Error Detail Modal -->
+    <div id="error-modal" class="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm hidden items-center justify-center p-4">
+        <div class="bg-slate-900 border border-slate-800 rounded-2xl max-w-2xl w-full p-6 shadow-2xl space-y-4">
+            <div class="flex items-center justify-between pb-3 border-b border-slate-800">
+                <div class="flex items-center space-x-2.5 text-rose-400">
+                    <i data-lucide="alert-triangle" class="w-5 h-5"></i>
+                    <h3 class="text-base font-bold text-white">Detalle de Error de Transferencia</h3>
+                </div>
+                <button onclick="closeErrorModal()" class="text-slate-400 hover:text-slate-200 p-1 rounded-lg">
+                    <i data-lucide="x" class="w-5 h-5"></i>
+                </button>
+            </div>
+
+            <div>
+                <div class="text-xs text-slate-400 mb-1">Archivo Afectado:</div>
+                <div id="modal-error-file" class="font-mono text-xs bg-slate-950 p-2 rounded border border-slate-800 text-slate-200 break-all"></div>
+            </div>
+
+            <div>
+                <div class="text-xs text-slate-400 mb-1">Mensaje de Error / Salida Rclone:</div>
+                <pre id="modal-error-msg" class="font-mono text-xs bg-slate-950 p-3 rounded-lg border border-slate-800 text-rose-300 max-h-60 overflow-y-auto whitespace-pre-wrap select-all"></pre>
+            </div>
+
+            <div class="flex justify-end gap-2 pt-2">
+                <button onclick="closeErrorModal()" class="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg text-xs font-medium">Cerrar</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Network Interfaces Modal (All Available Network IPs) -->
+    <div id="network-modal" class="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm hidden items-center justify-center p-4">
+        <div class="bg-slate-900 border border-slate-800 rounded-2xl max-w-xl w-full p-6 shadow-2xl space-y-4">
+            <div class="flex items-center justify-between pb-3 border-b border-slate-800">
+                <div class="flex items-center space-x-2.5 text-indigo-400">
+                    <div class="p-2 bg-indigo-500/10 rounded-lg">
+                        <i data-lucide="network" class="w-5 h-5 text-indigo-400"></i>
+                    </div>
+                    <div>
+                        <h3 class="text-base font-bold text-white">Direcciones IP de Red Disponibles</h3>
+                        <p class="text-xs text-slate-400">Accede a esta aplicación desde otros equipos usando cualquiera de estas URLs</p>
+                    </div>
+                </div>
+                <button onclick="closeNetworkModal()" class="text-slate-400 hover:text-slate-200 p-1 rounded-lg">
+                    <i data-lucide="x" class="w-5 h-5"></i>
+                </button>
+            </div>
+
+            <!-- List of interfaces -->
+            <div id="network-interfaces-list" class="space-y-2.5 max-h-80 overflow-y-auto pr-1">
+                <div class="text-slate-500 text-center py-4 text-xs font-mono">Detectando redes disponibles...</div>
+            </div>
+
+            <div class="bg-slate-950 p-3 rounded-xl border border-slate-800 text-[11px] text-slate-400 space-y-1">
+                <div class="flex items-center gap-1.5 font-medium text-slate-300">
+                    <i data-lucide="info" class="w-3.5 h-3.5 text-indigo-400"></i>
+                    <span>¿Cómo acceder desde otra computadora?</span>
+                </div>
+                <p>• <b>Misma Wi-Fi o Red Local:</b> Usa la URL de la tarjeta <b>Red Local LAN</b>.</p>
+                <p>• <b>Conexión Remota / Tailscale:</b> Usa la URL de la tarjeta <b>VPN / Tailscale</b>.</p>
+                <p>• Haz clic en <b>Copiar</b> en la tarjeta que necesites para pegarla en el navegador de tu otra PC.</p>
+            </div>
+
+            <div class="flex justify-end gap-2 pt-2">
+                <button onclick="closeNetworkModal()" class="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg text-xs font-medium">Cerrar</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Task Configuration Modal (Create / Edit Task) -->
+    <div id="task-modal" class="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm hidden items-center justify-center p-4 overflow-y-auto">
+        <div class="bg-slate-900 border border-slate-800 rounded-2xl max-w-3xl w-full p-6 shadow-2xl space-y-5 my-8">
+            <div class="flex items-center justify-between pb-3 border-b border-slate-800">
+                <div class="flex items-center space-x-2.5 text-indigo-400">
+                    <div class="p-2 bg-indigo-500/10 rounded-lg">
+                        <i data-lucide="layers" class="w-5 h-5 text-indigo-400"></i>
+                    </div>
+                    <div>
+                        <h3 id="task-modal-title" class="text-base font-bold text-white">Nueva Tarea de Sincronización</h3>
+                        <p class="text-xs text-slate-400">Configura un flujo independiente de sincronización desde el NAS hacia S3 o FTP</p>
+                    </div>
+                </div>
+                <button onclick="closeTaskModal()" class="text-slate-400 hover:text-slate-200 p-1 rounded-lg">
+                    <i data-lucide="x" class="w-5 h-5"></i>
+                </button>
+            </div>
+
+            <form id="task-form" onsubmit="submitTaskForm(event)" class="space-y-4">
+                <input type="hidden" id="task-id" value="">
+
+                <!-- Task Metadata: Alias & Name -->
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-300 mb-1">
+                            Alias / Etiqueta <span class="text-rose-400">*</span>
+                        </label>
+                        <input type="text" id="task-alias" required placeholder="Ej: STRAIN o FBE" class="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs text-white uppercase font-mono tracking-wider focus:outline-none focus:border-indigo-500">
+                        <p class="text-[10px] text-slate-500 mt-1">Identificador único (etiqueta los archivos en la tabla).</p>
+                    </div>
+                    <div class="md:col-span-2">
+                        <label class="block text-xs font-semibold text-slate-300 mb-1">
+                            Nombre Descriptivo <span class="text-rose-400">*</span>
+                        </label>
+                        <input type="text" id="task-name" required placeholder="Ej: Sensores Strain - NAS a S3" class="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-indigo-500">
+                    </div>
+                </div>
+
+                <!-- Source SFTP Section -->
+                <div class="bg-slate-950/70 border border-slate-800 rounded-xl p-4 space-y-3">
+                    <div class="flex items-center justify-between pb-2 border-b border-slate-800/80">
+                        <div class="flex items-center gap-2 text-xs font-bold text-indigo-300">
+                            <i data-lucide="server" class="w-4 h-4"></i> Origen SFTP (Servidor NAS)
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <button type="button" onclick="pingCurrentModalTask('source')" class="flex items-center gap-1.5 px-3 py-1 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 rounded-lg text-xs font-medium transition">
+                                <i data-lucide="server" class="w-3.5 h-3.5"></i> Ping Origen
+                            </button>
+                            <button type="button" onclick="scanCurrentTaskPreview()" class="flex items-center gap-1.5 px-3 py-1 bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 rounded-lg text-xs font-medium transition">
+                                <i data-lucide="scan" class="w-3.5 h-3.5"></i> Escanear Archivos en NAS
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-1 sm:grid-cols-4 gap-2.5">
+                        <div class="sm:col-span-3">
+                            <label class="block text-[11px] text-slate-400 mb-1">Host / IP del NAS</label>
+                            <input type="text" id="task-source-host" required placeholder="192.168.1.100 o nas.local" class="w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-indigo-500 font-mono">
+                        </div>
+                        <div>
+                            <label class="block text-[11px] text-slate-400 mb-1">Puerto</label>
+                            <input type="number" id="task-source-port" value="22" class="w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-indigo-500 font-mono">
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                        <div>
+                            <label class="block text-[11px] text-slate-400 mb-1">Usuario SFTP</label>
+                            <input type="text" id="task-source-user" required placeholder="admin / usuario" class="w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-indigo-500 font-mono">
+                        </div>
+                        <div>
+                            <label class="block text-[11px] text-slate-400 mb-1">Contraseña SFTP</label>
+                            <input type="password" id="task-source-pass" placeholder="••••••••" class="w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-indigo-500 font-mono">
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                        <div>
+                            <label class="block text-[11px] text-slate-400 mb-1">Ruta de Carpeta en NAS</label>
+                            <input type="text" id="task-source-path" placeholder="datos/strain o datos/fbe" class="w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-indigo-500 font-mono">
+                            <span class="text-[10px] text-slate-500">Relativa al usuario SFTP o absoluta comenzando con /</span>
+                        </div>
+                        <div>
+                            <label class="block text-[11px] text-slate-400 mb-1">Ruta Clave Privada SSH (Opcional)</label>
+                            <input type="text" id="task-source-key-file" placeholder="/Users/usuario/.ssh/id_rsa" class="w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-indigo-500 font-mono">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Destination Section (S3 or FTP) -->
+                <div class="bg-slate-950/70 border border-slate-800 rounded-xl p-4 space-y-3">
+                    <div class="flex items-center justify-between pb-2 border-b border-slate-800/80">
+                        <div class="flex items-center gap-2 text-xs font-bold text-slate-200">
+                            <i data-lucide="cloud" class="w-4 h-4 text-indigo-400"></i> Destino de Sincronización
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <button type="button" onclick="testCurrentModalDest()" class="flex items-center gap-1.5 px-3 py-1 bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/30 rounded-lg text-xs font-medium transition">
+                                <i data-lucide="check-circle-2" class="w-3.5 h-3.5"></i> Probar Destino
+                            </button>
+                            <button type="button" onclick="pingCurrentModalTask('destination')" class="flex items-center gap-1.5 px-3 py-1 bg-sky-500/10 hover:bg-sky-500/20 text-sky-300 border border-sky-500/30 rounded-lg text-xs font-medium transition">
+                                <i data-lucide="cloud" class="w-3.5 h-3.5"></i> Ping Destino
+                            </button>
+                            <div class="flex items-center gap-1 bg-slate-900 p-1 rounded-lg border border-slate-800 text-xs">
+                                <button type="button" id="task-btn-dest-s3" onclick="setTaskDestType('s3')" class="px-3 py-1 rounded-md text-xs font-semibold bg-indigo-600 text-white transition">Amazon S3 / MinIO</button>
+                                <button type="button" id="task-btn-dest-ftp" onclick="setTaskDestType('ftp')" class="px-3 py-1 rounded-md text-xs font-medium text-slate-400 hover:text-white transition">Servidor FTP</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Destination S3 Fields -->
+                    <div id="task-dest-s3-section" class="space-y-2.5">
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                            <div>
+                                <label class="block text-[11px] text-slate-400 mb-1">Proveedor S3</label>
+                                <select id="task-s3-provider" class="w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-indigo-500">
+                                    <option value="Other">Otro compatible con S3 (RustFS, MinIO, etc.)</option>
+                                    <option value="AWS">Amazon Web Services (AWS S3)</option>
+                                    <option value="Minio">MinIO Object Storage</option>
+                                    <option value="Wasabi">Wasabi Cloud Storage</option>
+                                    <option value="Cloudflare">Cloudflare R2</option>
+                                    <option value="Ceph">Ceph Storage</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="block text-[11px] text-slate-400 mb-1">Nombre del Bucket</label>
+                                <input type="text" id="task-s3-bucket" placeholder="mi-bucket-almacenamiento" class="w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-indigo-500 font-mono">
+                            </div>
+                        </div>
+
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                            <div>
+                                <label class="block text-[11px] text-slate-400 mb-1">Access Key ID</label>
+                                <input type="text" id="task-s3-access-key" placeholder="AKIAIOSFODNN7EXAMPLE" class="w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-indigo-500 font-mono">
+                            </div>
+                            <div>
+                                <label class="block text-[11px] text-slate-400 mb-1">Secret Access Key</label>
+                                <input type="password" id="task-s3-secret-key" placeholder="••••••••" class="w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-indigo-500 font-mono">
+                            </div>
+                        </div>
+
+                        <div class="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                            <div>
+                                <label class="block text-[11px] text-slate-400 mb-1">Región</label>
+                                <input type="text" id="task-s3-region" value="us-east-1" class="w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-indigo-500 font-mono">
+                            </div>
+                            <div>
+                                <label class="block text-[11px] text-slate-400 mb-1">Endpoint (MinIO / R2)</label>
+                                <input type="text" id="task-s3-endpoint" placeholder="https://s3.ejemplo.com" class="w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-indigo-500 font-mono">
+                            </div>
+                            <div>
+                                <label class="block text-[11px] text-slate-400 mb-1">Carpeta Destino (Prefijo)</label>
+                                <input type="text" id="task-s3-path" placeholder="respaldos/strain" class="w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-indigo-500 font-mono">
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Destination FTP Fields -->
+                    <div id="task-dest-ftp-section" class="space-y-2.5 hidden">
+                        <div class="grid grid-cols-1 sm:grid-cols-4 gap-2.5">
+                            <div class="sm:col-span-3">
+                                <label class="block text-[11px] text-slate-400 mb-1">Servidor FTP (Host/IP)</label>
+                                <input type="text" id="task-ftp-host" placeholder="ftp.midominio.com" class="w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-indigo-500 font-mono">
+                            </div>
+                            <div>
+                                <label class="block text-[11px] text-slate-400 mb-1">Puerto</label>
+                                <input type="number" id="task-ftp-port" value="21" class="w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-indigo-500 font-mono">
+                            </div>
+                        </div>
+
+                        <div class="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                            <div>
+                                <label class="block text-[11px] text-slate-400 mb-1">Usuario FTP</label>
+                                <input type="text" id="task-ftp-user" placeholder="ftpuser" class="w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-indigo-500 font-mono">
+                            </div>
+                            <div>
+                                <label class="block text-[11px] text-slate-400 mb-1">Contraseña FTP</label>
+                                <input type="password" id="task-ftp-pass" placeholder="••••••••" class="w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-indigo-500 font-mono">
+                            </div>
+                            <div>
+                                <label class="block text-[11px] text-slate-400 mb-1">Carpeta Destino</label>
+                                <input type="text" id="task-ftp-path" placeholder="/datos/fbe" class="w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-indigo-500 font-mono">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Sync Execution Settings -->
+                <div class="grid grid-cols-1 sm:grid-cols-4 gap-3 bg-slate-950/40 p-3 rounded-xl border border-slate-800">
+                    <div>
+                        <label class="block text-[11px] text-slate-400 mb-1">Intervalo</label>
+                        <div class="flex items-center gap-1.5">
+                            <input type="number" id="task-sync-interval" value="60" min="5" class="w-20 bg-slate-900 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs text-white font-mono focus:outline-none focus:border-indigo-500">
+                            <span class="text-xs text-slate-400">seg</span>
+                        </div>
+                    </div>
+                    <div>
+                        <label class="block text-[11px] text-slate-400 mb-1" title="Solo sincroniza archivos con antigüedad mayor a este tiempo para evitar leer mientras el interrogador aún los escribe">Antigüedad Mínima</label>
+                        <div class="flex items-center gap-1.5">
+                            <input type="number" id="task-min-file-age" value="2" min="0" class="w-20 bg-slate-900 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs text-white font-mono focus:outline-none focus:border-indigo-500">
+                            <span class="text-xs text-slate-400">min</span>
+                        </div>
+                    </div>
+                    <div class="flex items-center pt-4">
+                        <label class="flex items-center space-x-2 text-xs text-slate-300 cursor-pointer">
+                            <input type="checkbox" id="task-auto-start" checked class="rounded bg-slate-900 border-slate-700 text-indigo-600 focus:ring-0">
+                            <span>Auto-iniciar</span>
+                        </label>
+                    </div>
+                    <div class="flex items-center pt-4">
+                        <label class="flex items-center space-x-2 text-xs text-slate-300 cursor-pointer">
+                            <input type="checkbox" id="task-recursive-scan" checked class="rounded bg-slate-900 border-slate-700 text-indigo-600 focus:ring-0">
+                            <span>Recursivo</span>
+                        </label>
+                    </div>
+                </div>
+
+                <!-- Sync Date Range Settings (Optional) -->
+                <div class="bg-slate-950/40 p-3 rounded-xl border border-slate-800 space-y-2">
+                    <div class="flex items-center justify-between">
+                        <label class="block text-[11px] font-semibold text-slate-300 flex items-center gap-1.5">
+                            <i data-lucide="calendar" class="w-3.5 h-3.5 text-indigo-400"></i>
+                            Rango de Fechas / Horas a Transferir (Opcional)
+                        </label>
+                        <span class="text-[10px] text-slate-500">Dejar vacío para transferir todos los archivos</span>
+                    </div>
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div>
+                            <div class="flex items-center justify-between mb-1">
+                                <label class="block text-[11px] text-slate-400" title="Fecha y hora inicial. Si solo se especifica esta fecha, tomará todos los archivos a partir de este momento.">
+                                    Desde (Fecha / Hora)
+                                </label>
+                                <button type="button" onclick="document.getElementById('task-date-from').value=''" class="text-[10px] text-slate-500 hover:text-slate-300 transition">Limpiar</button>
+                            </div>
+                            <input type="datetime-local" id="task-date-from" class="w-full bg-slate-900 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs text-white font-mono focus:outline-none focus:border-indigo-500">
+                            <p class="text-[10px] text-slate-500 mt-0.5">Ej: 2026-09-02 (o con hora específica)</p>
+                        </div>
+                        <div>
+                            <div class="flex items-center justify-between mb-1">
+                                <label class="block text-[11px] text-slate-400" title="Fecha y hora final. Si se deja vacía, se sincronizarán todos los archivos generados a partir de 'Desde'.">
+                                    Hasta (Fecha / Hora - Opcional)
+                                </label>
+                                <button type="button" onclick="document.getElementById('task-date-to').value=''" class="text-[10px] text-slate-500 hover:text-slate-300 transition">Limpiar</button>
+                            </div>
+                            <input type="datetime-local" id="task-date-to" class="w-full bg-slate-900 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs text-white font-mono focus:outline-none focus:border-indigo-500">
+                            <p class="text-[10px] text-slate-500 mt-0.5">Opcional. Vacío = sin fecha límite hacia adelante</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Footer buttons -->
+                <div class="flex items-center justify-end gap-2.5 pt-3 border-t border-slate-800">
+                    <button type="button" onclick="closeTaskModal()" class="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-medium transition">
+                        Cancelar
+                    </button>
+                    <button type="submit" class="flex items-center gap-1.5 px-5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-semibold shadow-md shadow-indigo-900/30 transition">
+                        <i data-lucide="save" class="w-4 h-4"></i> Guardar Tarea
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Remote Scan Preview Modal -->
+    <div id="scan-preview-modal" class="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm hidden items-center justify-center p-4">
+        <div class="bg-slate-900 border border-slate-800 rounded-2xl max-w-3xl w-full p-6 shadow-2xl space-y-4 max-h-[85vh] flex flex-col">
+            <div class="flex items-center justify-between pb-3 border-b border-slate-800 shrink-0">
+                <div class="flex items-center space-x-2.5 text-indigo-400">
+                    <div class="p-2 bg-indigo-500/10 rounded-lg">
+                        <i data-lucide="scan" class="w-5 h-5 text-indigo-400"></i>
+                    </div>
+                    <div>
+                        <h3 class="text-base font-bold text-white">Archivos Disponibles en Servidor NAS</h3>
+                        <p class="text-xs text-slate-400">Exploración en tiempo real de la carpeta origen configurada</p>
+                    </div>
+                </div>
+                <button onclick="closeScanPreviewModal()" class="text-slate-400 hover:text-slate-200 p-1 rounded-lg">
+                    <i data-lucide="x" class="w-5 h-5"></i>
+                </button>
+            </div>
+
+            <!-- Scan metrics summary banner -->
+            <div id="scan-preview-summary" class="bg-slate-950 p-3 rounded-xl border border-slate-800 flex items-center justify-between text-xs shrink-0">
+                <div class="flex items-center gap-2 text-slate-300 font-medium">
+                    <i data-lucide="folder-search" class="w-4 h-4 text-indigo-400"></i>
+                    <span id="scan-preview-count">0 archivos encontrados</span>
+                </div>
+                <div class="text-slate-400 font-mono text-[11px]" id="scan-preview-size">0 B totales</div>
+            </div>
+
+            <!-- Scan result list or status -->
+            <div id="scan-preview-content" class="flex-1 overflow-y-auto space-y-2 pr-1 font-mono text-xs">
+                <div class="text-center py-12 text-slate-400">
+                    <i data-lucide="loader" class="w-6 h-6 animate-spin mx-auto mb-2 text-indigo-400"></i>
+                    Conectando con SFTP y analizando la estructura remota...
+                </div>
+            </div>
+
+            <!-- Footer -->
+            <div class="flex justify-end gap-2 pt-2 border-t border-slate-800 shrink-0">
+                <button onclick="closeScanPreviewModal()" class="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg text-xs font-medium">
+                    Cerrar
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast Notification Container -->
+    <div id="toast-container" class="fixed bottom-4 right-4 z-50 flex flex-col space-y-2 pointer-events-none"></div>
+
+    <!-- Frontend Application Logic Script -->
+    <script>
+        // State variables
+        let currentDestType = 's3';
+        let currentTaskDestType = 's3';
+        let selectedFileIds = new Set();
+        let currentPage = 1;
+        let totalPages = 1;
+        let searchTimeout = null;
+
+        // ==================== WEBSOCKET REAL-TIME CLIENT ====================
+        let liveSocket = null;
+        let wsReconnectTimer = null;
+        let wsFallbackPollTimer = null;
+        let isWsConnected = false;
+
+        function updateWsBadgeUI(connected) {
+            const badge = document.getElementById('ws-badge');
+            const dot = document.getElementById('ws-dot');
+            const text = document.getElementById('ws-text');
+            if (!badge || !dot || !text) return;
+
+            if (connected) {
+                badge.className = "flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-emerald-950/40 border border-emerald-500/30 text-xs font-semibold text-emerald-400 shadow-sm";
+                dot.className = "w-2 h-2 rounded-full bg-emerald-400 animate-pulse";
+                text.innerText = "En Vivo (WS)";
+                badge.title = "Canal WebSocket en tiempo real activo (cero peticiones HTTP constantes)";
+            } else {
+                badge.className = "flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-amber-950/40 border border-amber-500/30 text-xs font-semibold text-amber-400 shadow-sm";
+                dot.className = "w-2 h-2 rounded-full bg-amber-400";
+                text.innerText = "Reconectando...";
+                badge.title = "Reconectando WebSocket...";
+            }
+        }
+
+        function initWebSocket() {
+            if (wsReconnectTimer) {
+                clearTimeout(wsReconnectTimer);
+                wsReconnectTimer = null;
+            }
+
+            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            const wsUrl = `${protocol}//${window.location.host}/ws`;
+
+            try {
+                liveSocket = new WebSocket(wsUrl);
+
+                liveSocket.onopen = () => {
+                    isWsConnected = true;
+                    updateWsBadgeUI(true);
+                    if (wsFallbackPollTimer) {
+                        clearInterval(wsFallbackPollTimer);
+                        wsFallbackPollTimer = null;
+                    }
+                };
+
+                liveSocket.onmessage = (event) => {
+                    try {
+                        const msg = JSON.parse(event.data);
+                        handleWebSocketEvent(msg);
+                    } catch (e) {
+                        console.error("Error procesando mensaje WS:", e);
+                    }
+                };
+
+                liveSocket.onclose = () => {
+                    isWsConnected = false;
+                    updateWsBadgeUI(false);
+                    scheduleWsReconnect();
+                };
+
+                liveSocket.onerror = (err) => {
+                    console.warn("Aviso en WebSocket:", err);
+                    isWsConnected = false;
+                    updateWsBadgeUI(false);
+                };
+            } catch (err) {
+                console.error("Fallo al inicializar WebSocket:", err);
+                isWsConnected = false;
+                updateWsBadgeUI(false);
+                scheduleWsReconnect();
+            }
+        }
+
+        function scheduleWsReconnect() {
+            if (wsReconnectTimer) return;
+            // Solo si está desconectado, activa un sondeo muy espaciado (10s) de respaldo
+            if (!wsFallbackPollTimer) {
+                wsFallbackPollTimer = setInterval(() => {
+                    if (!isWsConnected) {
+                        fetchStatus();
+                    }
+                }, 10000);
+            }
+            wsReconnectTimer = setTimeout(() => {
+                wsReconnectTimer = null;
+                initWebSocket();
+            }, 3000);
+        }
+
+        // Live transfer metrics and active progress tracker
+        const activeFileProgress = {};
+        let bannerHideTimeout = null;
+        let filesChangedDebounce = null;
+
+        function formatSpeed(bytesPerSec) {
+            if (!bytesPerSec || bytesPerSec <= 0) return '';
+            return formatBytes(bytesPerSec) + '/s';
+        }
+
+        function formatEta(seconds) {
+            if (seconds === null || seconds === undefined || seconds < 0) return '';
+            if (seconds < 60) return `${Math.round(seconds)}s`;
+            const mins = Math.floor(seconds / 60);
+            const secs = Math.round(seconds % 60);
+            return `${mins}m ${secs}s`;
+        }
+
+        function showTransferBanner(filePath, pct = null, metaStr = null) {
+            if (bannerHideTimeout) {
+                clearTimeout(bannerHideTimeout);
+                bannerHideTimeout = null;
+            }
+            const banner = document.getElementById('transfer-banner');
+            if (banner) {
+                if (banner.classList.contains('hidden')) {
+                    banner.classList.remove('hidden');
+                }
+                if (filePath) {
+                    const nameElem = document.getElementById('transfer-file-name');
+                    if (nameElem && nameElem.innerText !== filePath) nameElem.innerText = filePath;
+                }
+                if (pct !== null && pct !== undefined && !isNaN(pct)) {
+                    const numPct = Math.min(Math.max(parseFloat(pct), 0), 100);
+                    const badgePct = document.getElementById('transfer-badge-pct');
+                    if (badgePct) badgePct.innerText = `${numPct.toFixed(1)}%`;
+                    const mainBar = document.getElementById('transfer-main-bar');
+                    if (mainBar) mainBar.style.width = `${numPct}%`;
+                }
+                if (metaStr !== null && metaStr !== undefined) {
+                    const metaElem = document.getElementById('transfer-speed-eta');
+                    if (metaElem && metaElem.innerText !== metaStr) metaElem.innerText = metaStr;
+                }
+            }
+        }
+
+        function hideTransferBanner() {
+            if (bannerHideTimeout) {
+                clearTimeout(bannerHideTimeout);
+                bannerHideTimeout = null;
+            }
+            for (const k in activeFileProgress) {
+                delete activeFileProgress[k];
+            }
+            const banner = document.getElementById('transfer-banner');
+            if (banner) {
+                banner.classList.add('hidden');
+            }
+        }
+
+        function scheduleHideTransferBanner(delay = 1000) {
+            if (bannerHideTimeout) clearTimeout(bannerHideTimeout);
+            bannerHideTimeout = setTimeout(() => {
+                const banner = document.getElementById('transfer-banner');
+                if (banner && Object.keys(activeFileProgress).length === 0) {
+                    banner.classList.add('hidden');
+                }
+                bannerHideTimeout = null;
+            }, delay);
+        }
+
+        function renderTransferProgressBar(pct) {
+            return `
+                <div class="space-y-1 min-w-[110px] max-w-[160px]">
+                    <div class="flex items-center justify-between text-[11px] font-sans">
+                        <span class="inline-flex items-center gap-1.5 font-bold text-indigo-400">
+                            <span class="relative flex h-2 w-2">
+                                <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-indigo-400 opacity-75"></span>
+                                <span class="relative inline-flex rounded-full h-2 w-2 bg-indigo-500"></span>
+                            </span>
+                            <span class="file-pct-text">${pct.toFixed(1)}%</span>
+                        </span>
+                    </div>
+                    <div class="w-full bg-slate-950 rounded-full h-1.5 overflow-hidden border border-slate-800">
+                        <div class="file-progress-bar bg-gradient-to-r from-indigo-500 via-sky-400 to-emerald-400 h-1.5 rounded-full transition-all duration-300" style="width: ${pct}%"></div>
+                    </div>
+                </div>
+            `;
+        }
+
+        function updateFileLiveProgress(data) {
+            if (!data || !data.file_id) return;
+            const fileId = data.file_id;
+            const pct = Math.min(Math.max(parseFloat(data.percentage || 0), 0), 100);
+            const speed = data.speed ? formatSpeed(data.speed) : '';
+            const eta = (data.eta !== null && data.eta !== undefined) ? formatEta(data.eta) : '';
+            const metaStr = [speed, eta].filter(Boolean).join(' • ');
+
+            activeFileProgress[fileId] = {
+                percentage: pct,
+                speed: speed,
+                eta: eta,
+                metaStr: metaStr,
+                file_path: data.file_path,
+                alias: data.alias
+            };
+
+            // 1. Actualizar en el DOM únicamente la celda específica del archivo (solo porcentaje en la tabla)
+            const cell = document.getElementById(`file-status-${fileId}`);
+            if (cell) {
+                let pctElem = cell.querySelector('.file-pct-text');
+                let barElem = cell.querySelector('.file-progress-bar');
+
+                if (!barElem) {
+                    cell.dataset.status = "transferring";
+                    cell.innerHTML = renderTransferProgressBar(pct);
+                } else {
+                    if (pctElem && pctElem.innerText !== `${pct.toFixed(1)}%`) pctElem.innerText = `${pct.toFixed(1)}%`;
+                    if (barElem) barElem.style.width = `${pct}%`;
+                }
+            }
+
+            // 2. Actualizar Banner superior de transferencia activa
+            if (data.file_path) {
+                showTransferBanner(data.file_path, pct, metaStr);
+            }
+        }
+
+        function handleWebSocketEvent(msg) {
+            const type = msg.type;
+            const data = msg.data;
+
+            if (type === 'initial_state') {
+                if (data && data.stats) updateStatsUI(data.stats);
+            } else if (type === 'status_update') {
+                updateStatsUI(data);
+            } else if (type === 'file_progress') {
+                updateFileLiveProgress(data);
+            } else if (type === 'file_transferring') {
+                if (data && data.file_path) {
+                    showTransferBanner(data.file_path, 0.0, 'Iniciando...');
+                }
+                if (data && data.file_id) {
+                    const cell = document.getElementById(`file-status-${data.file_id}`);
+                    if (cell) {
+                        cell.dataset.status = "transferring";
+                        cell.innerHTML = renderTransferProgressBar(0.0);
+                    }
+                }
+            } else if (type === 'file_completed') {
+                if (data && data.file_id) {
+                    delete activeFileProgress[data.file_id];
+                    const cell = document.getElementById(`file-status-${data.file_id}`);
+                    if (cell) {
+                        cell.dataset.status = "completed";
+                        cell.innerHTML = `<span class="px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-sans font-medium inline-flex items-center gap-1"><svg class="w-3 h-3 inline-block" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"/></svg> Enviado 100%</span>`;
+                    }
+                }
+                if (Object.keys(activeFileProgress).length === 0) {
+                    scheduleHideTransferBanner(2000);
+                }
+            } else if (type === 'file_error') {
+                if (data && data.file_id) {
+                    delete activeFileProgress[data.file_id];
+                    const cell = document.getElementById(`file-status-${data.file_id}`);
+                    if (cell) {
+                        cell.dataset.status = "error";
+                        cell.innerHTML = `<span class="px-2 py-0.5 rounded-full bg-rose-500/10 text-rose-400 border border-rose-500/20 font-sans font-medium inline-flex items-center gap-1"><svg class="w-3 h-3 inline-block" fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" stroke-width="2"/><path stroke-linecap="round" stroke-width="2" d="M12 8v4m0 4h.01"/></svg> Error</span>`;
+                    }
+                }
+                if (Object.keys(activeFileProgress).length === 0) {
+                    scheduleHideTransferBanner(2000);
+                }
+            } else if (type === 'files_changed') {
+                // Debounce general files reload only when new files are discovered in SQLite
+                if (filesChangedDebounce) clearTimeout(filesChangedDebounce);
+                filesChangedDebounce = setTimeout(() => {
+                    const isFilesTab = !document.getElementById('tab-content-files').classList.contains('hidden');
+                    if (isFilesTab) loadFiles(currentPage, true);
+                    const isTasksTab = !document.getElementById('tab-content-tasks').classList.contains('hidden');
+                    if (isTasksTab) loadTasks(true);
+                    fetchStatus();
+                    filesChangedDebounce = null;
+                }, 600);
+            } else if (type === 'task_state') {
+                if (data && (data.state === 'stopped' || data.state === 'paused')) {
+                    hideTransferBanner();
+                    const isFilesTab = !document.getElementById('tab-content-files').classList.contains('hidden');
+                    if (isFilesTab) loadFiles(currentPage, true);
+                }
+                const isTasksTab = !document.getElementById('tab-content-tasks').classList.contains('hidden');
+                if (isTasksTab) loadTasks(true);
+                fetchStatus();
+            } else if (type === 'engine_state') {
+                if (data && (data.state === 'stopped' || data.state === 'paused')) {
+                    hideTransferBanner();
+                    const isFilesTab = !document.getElementById('tab-content-files').classList.contains('hidden');
+                    if (isFilesTab) loadFiles(currentPage, true);
+                }
+                if (data && data.state) {
+                    updateTaskControlsUI(data.state, false);
+                }
+                const isTasksTab = !document.getElementById('tab-content-tasks').classList.contains('hidden');
+                if (isTasksTab) loadTasks(true);
+                fetchStatus();
+            }
+        }
+
+        // Initialize application on page load
+        document.addEventListener('DOMContentLoaded', () => {
+            lucide.createIcons();
+            fetchStatus();
+            loadAliases();
+            loadFiles(1);
+            loadTasks();
+            loadConfiguration();
+            loadLogs();
+            loadHistory();
+            checkServiceStatus();
+
+            // Iniciar canal WebSocket en tiempo real (reemplaza las peticiones HTTP constantes)
+            initWebSocket();
+        });
+
+        // Tab Switching
+        function switchTab(tabId) {
+            ['files', 'tasks', 'contingency', 'logs'].forEach(t => {
+                const content = document.getElementById(`tab-content-${t}`);
+                const btn = document.getElementById(`tab-btn-${t}`);
+                if (content && btn) {
+                    if (t === tabId) {
+                        content.classList.remove('hidden');
+                        btn.classList.add('text-indigo-400', 'border-indigo-500');
+                        btn.classList.remove('text-slate-400', 'border-transparent');
+                    } else {
+                        content.classList.add('hidden');
+                        btn.classList.remove('text-indigo-400', 'border-indigo-500');
+                        btn.classList.add('text-slate-400', 'border-transparent');
+                    }
+                }
+            });
+            lucide.createIcons();
+            if (tabId === 'files') {
+                loadFiles(currentPage, true);
+            } else if (tabId === 'tasks') {
+                loadTasks();
+            } else if (tabId === 'logs') {
+                loadLogs();
+                loadHistory();
+            }
+        }
+
+        // Destination type toggle
+        function setDestType(type) {
+            currentDestType = type;
+            const btnS3 = document.getElementById('btn-dest-s3');
+            const btnFtp = document.getElementById('btn-dest-ftp');
+            const secS3 = document.getElementById('dest-s3-section');
+            const secFtp = document.getElementById('dest-ftp-section');
+
+            if (type === 's3') {
+                btnS3.classList.add('bg-indigo-600', 'text-white');
+                btnS3.classList.remove('text-slate-400');
+                btnFtp.classList.remove('bg-indigo-600', 'text-white');
+                btnFtp.classList.add('text-slate-400');
+                secS3.classList.remove('hidden');
+                secFtp.classList.add('hidden');
+            } else {
+                btnFtp.classList.add('bg-indigo-600', 'text-white');
+                btnFtp.classList.remove('text-slate-400');
+                btnS3.classList.remove('bg-indigo-600', 'text-white');
+                btnS3.classList.add('text-slate-400');
+                secFtp.classList.remove('hidden');
+                secS3.classList.add('hidden');
+            }
+            lucide.createIcons();
+        }
+
+        // Format Byte Sizes
+        function formatBytes(bytes) {
+            if (!bytes || bytes === 0) return '0 B';
+            const k = 1024;
+            const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+        }
+
+        // Toast Messages
+        function showToast(message, type = 'info') {
+            const container = document.getElementById('toast-container');
+            const toast = document.createElement('div');
+            const colorClass = type === 'success' ? 'bg-emerald-600' : type === 'error' ? 'bg-rose-600' : 'bg-indigo-600';
+            
+            toast.className = `${colorClass} text-white px-4 py-2.5 rounded-xl shadow-xl text-xs font-medium flex items-center space-x-2 transition-all duration-300 transform translate-y-4 opacity-0 pointer-events-auto`;
+            toast.innerHTML = `<span>${message}</span>`;
+            
+            container.appendChild(toast);
+            setTimeout(() => {
+                toast.classList.remove('translate-y-4', 'opacity-0');
+            }, 10);
+
+            setTimeout(() => {
+                toast.classList.add('opacity-0', 'translate-x-full');
+                setTimeout(() => toast.remove(), 300);
+            }, 4000);
+        }
+
+        // Network IPs Modal Logic
+        window.networkInterfaces = [];
+
+        function openNetworkModal() {
+            renderNetworkInterfaces();
+            const modal = document.getElementById('network-modal');
+            modal.classList.remove('hidden');
+            modal.classList.add('flex');
+            lucide.createIcons();
+        }
+
+        function closeNetworkModal() {
+            const modal = document.getElementById('network-modal');
+            modal.classList.add('hidden');
+            modal.classList.remove('flex');
+        }
+
+        function copyInterfaceUrl(url) {
+            navigator.clipboard.writeText(url).then(() => {
+                showToast("URL copiada: " + url, "success");
+            }).catch(() => {
+                prompt("Copia esta URL:", url);
+            });
+        }
+
+        function renderNetworkInterfaces() {
+            const list = document.getElementById('network-interfaces-list');
+            if (!list) return;
+            const ifaces = window.networkInterfaces || [];
+            if (ifaces.length === 0) {
+                list.innerHTML = `<div class="text-slate-500 text-center py-4 text-xs">No se encontraron interfaces activas.</div>`;
+                return;
+            }
+
+            list.innerHTML = ifaces.map(item => {
+                let badgeClass = "bg-slate-800 text-slate-300 border-slate-700";
+                if (item.category === "LAN") badgeClass = "bg-indigo-500/10 text-indigo-300 border-indigo-500/30";
+                if (item.category === "VPN") badgeClass = "bg-emerald-500/10 text-emerald-300 border-emerald-500/30";
+                if (item.category === "Local") badgeClass = "bg-slate-800/80 text-slate-400 border-slate-700/60";
+
+                const iconName = item.category === 'LAN' ? 'wifi' : (item.category === 'VPN' ? 'shield' : 'laptop');
+                const iconColor = item.category === 'LAN' ? 'text-indigo-400 bg-indigo-500/20' : (item.category === 'VPN' ? 'text-emerald-400 bg-emerald-500/20' : 'text-slate-400 bg-slate-800');
+
+                return `
+                    <div class="p-3 bg-slate-950/80 border border-slate-800 rounded-xl flex items-center justify-between gap-3 hover:border-slate-700 transition">
+                        <div class="flex items-center space-x-3 min-w-0">
+                            <div class="p-2 rounded-lg ${iconColor} shrink-0">
+                                <i data-lucide="${iconName}" class="w-4 h-4"></i>
+                            </div>
+                            <div class="min-w-0">
+                                <div class="flex items-center gap-2">
+                                    <span class="text-xs font-bold text-white truncate">${item.label}</span>
+                                    <span class="text-[10px] px-1.5 py-0.5 rounded border font-mono ${badgeClass}">${item.interface}</span>
+                                </div>
+                                <div class="text-xs font-mono text-slate-300 mt-0.5 truncate select-all">${item.url}</div>
+                            </div>
+                        </div>
+                        <div class="flex items-center gap-1.5 shrink-0">
+                            <button onclick="copyInterfaceUrl('${item.url}')" title="Copiar URL" class="flex items-center gap-1 px-2.5 py-1.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-lg text-xs font-medium text-slate-200 transition">
+                                <i data-lucide="copy" class="w-3.5 h-3.5 text-indigo-400"></i> Copiar
+                            </button>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+
+            lucide.createIcons();
+        }
+
+        // Update UI Stats from Data Payload (WebSocket or HTTP)
+        function updateStatsUI(data) {
+            if (!data) return;
+
+            // Update Network Interfaces & Header Badge
+            if (data.network_interfaces && data.network_interfaces.length > 0) {
+                window.networkInterfaces = data.network_interfaces;
+                const primary = data.network_interfaces.find(i => i.category === 'LAN') || 
+                                data.network_interfaces.find(i => i.category === 'VPN') || 
+                                data.network_interfaces[0];
+                const badge = document.getElementById('primary-ip-badge');
+                if (badge && primary) {
+                    badge.innerText = `${primary.ip}:${data.port || 8000}`;
+                }
+            }
+
+            // Update metric counters
+            const statTotal = document.getElementById('stat-total');
+            if (statTotal) statTotal.innerText = data.total_files ?? 0;
+            const statTotalSize = document.getElementById('stat-total-size');
+            if (statTotalSize) statTotalSize.innerText = formatBytes(data.total_size || 0) + ' totales';
+            const statCompleted = document.getElementById('stat-completed');
+            if (statCompleted) statCompleted.innerText = data.completed ?? 0;
+            const statCompletedSize = document.getElementById('stat-completed-size');
+            if (statCompletedSize) statCompletedSize.innerText = formatBytes(data.completed_size || 0) + ' enviados';
+            const statTransferring = document.getElementById('stat-transferring');
+            if (statTransferring) statTransferring.innerText = data.transferring ?? 0;
+            const statError = document.getElementById('stat-error');
+            if (statError) statError.innerText = data.error ?? 0;
+            const statPending = document.getElementById('stat-pending');
+            if (statPending) statPending.innerText = data.pending ?? 0;
+
+            // Update Active Transfer Banner (Smoothly stabilized)
+            if (data.is_syncing && data.current_file) {
+                const initPct = (data.current_file_progress !== undefined && data.current_file_progress !== null) ? data.current_file_progress : null;
+                showTransferBanner(data.current_file, initPct);
+            } else if (data.is_syncing) {
+                showTransferBanner("Sincronizando archivos...");
+            } else if (data.task_state === 'stopped' || data.state === 'stopped' || data.task_state === 'paused' || data.state === 'paused') {
+                hideTransferBanner();
+            } else if (!data.is_syncing && Object.keys(activeFileProgress).length === 0) {
+                scheduleHideTransferBanner(1500);
+            }
+
+            // Update Task State UI
+            if (data.task_state !== undefined) {
+                updateTaskControlsUI(data.task_state, !!data.is_syncing);
+            }
+        }
+
+        // Fetch Status & Metrics via HTTP (e.g., initial load or manual check)
+        async function fetchStatus() {
+            try {
+                const res = await fetch('/api/status');
+                if (!res.ok) return;
+                const data = await res.json();
+                updateStatsUI(data);
+            } catch (err) {
+                console.error("Error fetching status:", err);
+            }
+        }
+
+        let lastControlsState = null;
+        let lastControlsSyncing = null;
+
+        function updateTaskControlsUI(state, isSyncing) {
+            if (lastControlsState === state && lastControlsSyncing === isSyncing) {
+                return;
+            }
+            lastControlsState = state;
+            lastControlsSyncing = isSyncing;
+
+            const pill = document.getElementById('state-pill');
+            const dot = document.getElementById('state-indicator');
+            const text = document.getElementById('state-text');
+            const btnStart = document.getElementById('btn-start');
+            const btnPause = document.getElementById('btn-pause');
+            const btnResume = document.getElementById('btn-resume');
+            const btnStop = document.getElementById('btn-stop');
+
+            btnStart.classList.add('hidden');
+            btnStart.classList.remove('flex');
+            btnPause.classList.add('hidden');
+            btnPause.classList.remove('flex');
+            btnResume.classList.add('hidden');
+            btnResume.classList.remove('flex');
+            btnStop.classList.add('hidden');
+            btnStop.classList.remove('flex');
+
+            dot.className = "w-2.5 h-2.5 rounded-full";
+
+            if (state === 'running') {
+                dot.classList.add('bg-emerald-400', 'pulse-dot');
+                text.innerText = isSyncing ? 'SINCRONIZANDO' : 'EN ESPERA (ACTIVO)';
+                text.className = 'text-emerald-400';
+                pill.className = 'flex items-center gap-2 px-3 py-1.5 rounded-lg bg-emerald-950/40 border border-emerald-500/30 text-xs font-semibold';
+                btnPause.classList.remove('hidden');
+                btnPause.classList.add('flex');
+                btnStop.classList.remove('hidden');
+                btnStop.classList.add('flex');
+            } else if (state === 'paused') {
+                dot.classList.add('bg-amber-400');
+                text.innerText = 'PAUSADO';
+                text.className = 'text-amber-400';
+                pill.className = 'flex items-center gap-2 px-3 py-1.5 rounded-lg bg-amber-950/40 border border-amber-500/30 text-xs font-semibold';
+                btnResume.classList.remove('hidden');
+                btnResume.classList.add('flex');
+                btnStop.classList.remove('hidden');
+                btnStop.classList.add('flex');
+            } else {
+                // stopped
+                dot.classList.add('bg-rose-500');
+                text.innerText = 'DETENIDO';
+                text.className = 'text-rose-400';
+                pill.className = 'flex items-center gap-2 px-3 py-1.5 rounded-lg bg-rose-950/40 border border-rose-500/30 text-xs font-semibold';
+                btnStart.classList.remove('hidden');
+                btnStart.classList.add('flex');
+            }
+        }
+
+        // Scan all tasks WITHOUT starting them
+        async function scanAllTasksOnly() {
+            const btn = document.getElementById('btn-scan') || document.getElementById('btn-scan-and-start');
+            if (btn) {
+                btn.disabled = true;
+                btn.innerHTML = `<i data-lucide="loader" class="w-3.5 h-3.5 animate-spin"></i> <span>Escaneando...</span>`;
+                lucide.createIcons();
+            }
+            showToast("Escaneando archivos en todas las tareas configuradas...", "info");
+
+            try {
+                const res = await fetch('/api/tasks/scan-all', { method: 'POST' });
+                const data = await res.json();
+                if (res.ok) {
+                    showToast(data.message || "Archivos escaneados con éxito.", "success");
+                    fetchStatus();
+                    loadFiles(1);
+                    loadTasks();
+                    loadLogs();
+                } else {
+                    showToast(data.detail || "Error al escanear tareas", "error");
+                }
+            } catch (err) {
+                showToast(`Error de red: ${err.message}`, "error");
+            } finally {
+                if (btn) {
+                    btn.disabled = false;
+                    btn.innerHTML = `<i data-lucide="scan-line" class="w-3.5 h-3.5 shrink-0"></i> <span>Escanear</span>`;
+                    lucide.createIcons();
+                }
+            }
+        }
+
+        // Control Actions (start, pause, resume, stop, sync_now)
+        async function controlTask(action) {
+            try {
+                if (action === 'stop' || action === 'pause') {
+                    hideTransferBanner();
+                }
+                const res = await fetch(`/api/control/${action}`, { method: 'POST' });
+                const result = await res.json();
+                if (res.ok) {
+                    showToast(`Acción '${action}' ejecutada con éxito.`, 'success');
+                    if (action === 'stop' || action === 'pause') {
+                        hideTransferBanner();
+                        loadFiles(currentPage, true);
+                    }
+                    fetchStatus();
+                    loadLogs();
+                    loadTasks(true);
+                } else {
+                    showToast(result.detail || 'Error ejecutando comando', 'error');
+                }
+            } catch (err) {
+                showToast(`Error de red: ${err.message}`, 'error');
+            }
+        }
+
+        // Selection State Management
+        function toggleFileSelection(fileId, checked) {
+            if (checked) {
+                selectedFileIds.add(fileId);
+            } else {
+                selectedFileIds.delete(fileId);
+            }
+            updateSelectionBar();
+        }
+
+        function toggleSelectAllFiles(master) {
+            const isChecked = master.checked;
+            const checkboxes = document.querySelectorAll('.file-row-check');
+            checkboxes.forEach(cb => {
+                cb.checked = isChecked;
+                const id = parseInt(cb.dataset.id, 10);
+                if (isChecked) {
+                    selectedFileIds.add(id);
+                } else {
+                    selectedFileIds.delete(id);
+                }
+            });
+            updateSelectionBar();
+        }
+
+        function clearFileSelection() {
+            selectedFileIds.clear();
+            const master = document.getElementById('check-all-files');
+            if (master) master.checked = false;
+            document.querySelectorAll('.file-row-check').forEach(cb => cb.checked = false);
+            updateSelectionBar();
+        }
+
+        function updateSelectionBar() {
+            const bar = document.getElementById('selection-action-bar');
+            const countSpan = document.getElementById('selected-files-count');
+            const count = selectedFileIds.size;
+            if (countSpan) countSpan.innerText = count;
+            if (bar) {
+                if (count > 0) {
+                    bar.classList.remove('hidden');
+                } else {
+                    bar.classList.add('hidden');
+                }
+            }
+        }
+
+        async function transferSelectedFilesNow() {
+            if (selectedFileIds.size === 0) {
+                showToast("No has seleccionado ningún archivo.", "info");
+                return;
+            }
+            const btn = document.getElementById('btn-transfer-selected');
+            if (btn) btn.disabled = true;
+            showToast(`Iniciando envío de ${selectedFileIds.size} archivo(s)...`, "info");
+
+            try {
+                const res = await fetch('/api/files/transfer-selected', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ file_ids: Array.from(selectedFileIds) })
+                });
+                const data = await res.json();
+                if (res.ok) {
+                    showToast(data.message || `${selectedFileIds.size} archivo(s) procesados para envío`, "success");
+                    clearFileSelection();
+                    loadFiles(currentPage);
+                    fetchStatus();
+                } else {
+                    showToast(data.detail || "Error al procesar transferencia", "error");
+                }
+            } catch (err) {
+                showToast(`Error de red: ${err.message}`, "error");
+            } finally {
+                if (btn) btn.disabled = false;
+            }
+        }
+
+        // Load Task Aliases for Filter Dropdown
+        async function loadAliases() {
+            try {
+                const res = await fetch('/api/task-aliases');
+                if (!res.ok) return;
+                const data = await res.json();
+                const select = document.getElementById('files-alias-filter');
+                if (!select) return;
+
+                const currentVal = select.value;
+                const aliases = data.aliases || [];
+
+                select.innerHTML = `<option value="all">Todas las Tareas / Alias</option>` + 
+                    aliases.map(a => {
+                        const val = (typeof a === 'object' && a !== null) ? a.alias : a;
+                        const label = (typeof a === 'object' && a !== null && a.name && a.name !== a.alias) ? `${a.alias} (${a.name})` : val;
+                        return `<option value="${val}">${label}</option>`;
+                    }).join('');
+
+                if (aliases.some(a => ((typeof a === 'object' && a !== null ? a.alias : a) === currentVal))) {
+                    select.value = currentVal;
+                }
+            } catch (err) {
+                console.error("Error loading aliases:", err);
+            }
+        }
+
+        // Load Files Table
+        async function loadFiles(page = 1, silent = false) {
+            currentPage = page;
+            const status = document.getElementById('files-status-filter').value;
+            const aliasFilter = document.getElementById('files-alias-filter') ? document.getElementById('files-alias-filter').value : 'all';
+            const search = document.getElementById('files-search').value.trim();
+
+            const tbody = document.getElementById('files-table-body');
+            if (!silent) {
+                tbody.innerHTML = `<tr><td colspan="9" class="px-4 py-8 text-center text-slate-500">Consultando archivos en SQLite...</td></tr>`;
+            }
+
+            try {
+                let url = `/api/files?page=${page}&per_page=20`;
+                if (status && status !== 'all') url += `&status=${encodeURIComponent(status)}`;
+                if (aliasFilter && aliasFilter !== 'all') url += `&task_alias=${encodeURIComponent(aliasFilter)}`;
+                if (search) url += `&search=${encodeURIComponent(search)}`;
+
+                const res = await fetch(url);
+                if (!res.ok) throw new Error("Error cargando archivos");
+                const data = await res.json();
+
+                totalPages = data.total_pages || 1;
+                document.getElementById('pagination-info').innerText = `Mostrando ${data.items.length} de ${data.total} archivos`;
+                document.getElementById('pagination-current').innerText = `Pág ${data.page} de ${totalPages}`;
+                document.getElementById('btn-prev-page').disabled = (data.page <= 1);
+                document.getElementById('btn-next-page').disabled = (data.page >= totalPages);
+
+                if (!data.items || data.items.length === 0) {
+                    tbody.innerHTML = `<tr><td colspan="9" class="px-4 py-8 text-center text-slate-500">No se encontraron archivos con los filtros aplicados.</td></tr>`;
+                    return;
+                }
+
+                // In-place silent update if table rows match current view
+                const existingRows = tbody.querySelectorAll('tr[data-row-id]');
+                const existingIds = Array.from(existingRows).map(r => parseInt(r.dataset.rowId, 10));
+                const incomingIds = data.items.map(f => f.id);
+                const idsMatch = existingIds.length === incomingIds.length && existingIds.every((id, idx) => id === incomingIds[idx]);
+
+                if (silent && idsMatch) {
+                    data.items.forEach(f => {
+                        const cell = document.getElementById(`file-status-${f.id}`);
+                        if (cell && !activeFileProgress[f.id]) {
+                            let badge = '';
+                            if (f.status === 'completed') {
+                                badge = `<span class="px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-sans font-medium inline-flex items-center gap-1"><svg class="w-3 h-3 inline-block" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"/></svg> Enviado 100%</span>`;
+                            } else if (f.status === 'error') {
+                                badge = `<span class="px-2 py-0.5 rounded-full bg-rose-500/10 text-rose-400 border border-rose-500/20 font-sans font-medium inline-flex items-center gap-1"><svg class="w-3 h-3 inline-block" fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" stroke-width="2"/><path stroke-linecap="round" stroke-width="2" d="M12 8v4m0 4h.01"/></svg> Error</span>`;
+                            } else if (f.status === 'pending') {
+                                badge = `<span class="px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/20 font-sans font-medium inline-flex items-center gap-1"><svg class="w-3 h-3 inline-block" fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" stroke-width="2"/><path stroke-linecap="round" stroke-width="2" d="M12 6v6l4 2"/></svg> Pendiente</span>`;
+                            }
+                            if (badge && cell.dataset.status !== f.status) {
+                                cell.dataset.status = f.status;
+                                cell.innerHTML = badge;
+                            }
+                        }
+                        const attemptsCell = document.getElementById(`file-attempts-${f.id}`);
+                        if (attemptsCell && attemptsCell.innerText !== String(f.attempts || 0)) {
+                            attemptsCell.innerText = f.attempts || 0;
+                        }
+                    });
+                    return;
+                }
+
+                // Update master checkbox header if all on this page are selected
+                const checkAll = document.getElementById('check-all-files');
+                if (checkAll && data.items.length > 0) {
+                    checkAll.checked = data.items.every(f => selectedFileIds.has(f.id));
+                }
+
+                tbody.innerHTML = data.items.map(f => {
+                    let badge = '';
+                    const pct = (f.progress_pct !== undefined && f.progress_pct !== null) ? parseFloat(f.progress_pct) : 0;
+                    if (f.status === 'completed') {
+                        badge = `<span class="px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-sans font-medium inline-flex items-center gap-1"><svg class="w-3 h-3 inline-block" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"/></svg> Enviado 100%</span>`;
+                    } else if (f.status === 'transferring') {
+                        const activeP = activeFileProgress[f.id] || {};
+                        const curPct = activeP.percentage !== undefined ? activeP.percentage : pct;
+                        badge = renderTransferProgressBar(curPct);
+                    } else if (f.status === 'error') {
+                        badge = `<span class="px-2 py-0.5 rounded-full bg-rose-500/10 text-rose-400 border border-rose-500/20 font-sans font-medium inline-flex items-center gap-1"><svg class="w-3 h-3 inline-block" fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" stroke-width="2"/><path stroke-linecap="round" stroke-width="2" d="M12 8v4m0 4h.01"/></svg> Error</span>`;
+                    } else {
+                        badge = `<span class="px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/20 font-sans font-medium inline-flex items-center gap-1"><svg class="w-3 h-3 inline-block" fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" stroke-width="2"/><path stroke-linecap="round" stroke-width="2" d="M12 6v6l4 2"/></svg> Pendiente</span>`;
+                    }
+
+                    const errBtn = f.error_message ? `
+                        <button onclick="openErrorModal('${f.file_path.replace(/'/g, "\\'")}', '${encodeURIComponent(f.error_message)}')" class="text-rose-400 hover:text-rose-300 underline font-sans flex items-center gap-1">
+                            <i data-lucide="eye" class="w-3.5 h-3.5"></i> Ver Error
+                        </button>
+                    ` : `<span class="text-slate-500 font-sans">-</span>`;
+
+                    const retryBtn = (f.status === 'error' || f.status === 'pending') ? `
+                        <button onclick="retrySingleFile(${f.id})" title="Forzar reintento" class="p-1 hover:bg-slate-800 rounded text-slate-400 hover:text-indigo-400 transition">
+                            <i data-lucide="rotate-ccw" class="w-3.5 h-3.5"></i>
+                        </button>
+                    ` : '';
+
+                    const isChecked = selectedFileIds.has(f.id);
+                    const alias = f.task_alias || 'GENERAL';
+                    const aliasColor = alias === 'STRAIN' ? 'bg-indigo-500/15 text-indigo-300 border-indigo-500/30' :
+                                       alias === 'FBE' ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30' :
+                                       'bg-slate-800 text-slate-300 border-slate-700';
+
+                    return `
+                        <tr class="hover:bg-slate-850/50 transition border-b border-slate-850" data-row-id="${f.id}">
+                            <td class="px-3 py-3 text-center">
+                                <input type="checkbox" class="file-row-check rounded bg-slate-950 border-slate-700 text-indigo-600 focus:ring-0 cursor-pointer"
+                                    data-id="${f.id}" ${isChecked ? 'checked' : ''} onchange="toggleFileSelection(${f.id}, this.checked)">
+                            </td>
+                            <td class="px-3 py-3 whitespace-nowrap">
+                                <span class="px-2 py-0.5 rounded font-mono text-[10px] font-bold border ${aliasColor}">${alias}</span>
+                            </td>
+                            <td class="px-4 py-3 font-medium text-slate-200">
+                                <div class="truncate max-w-md" title="${f.file_path}">${f.file_path}</div>
+                            </td>
+                            <td class="px-4 py-3 text-slate-400">${formatBytes(f.file_size)}</td>
+                            <td class="px-4 py-3" id="file-status-${f.id}" data-status="${f.status}">${badge}</td>
+                            <td class="px-4 py-3 text-slate-400 truncate max-w-[140px]">${f.mod_time ? f.mod_time.replace('T', ' ').substring(0, 19) : '-'}</td>
+                            <td class="px-4 py-3 text-slate-400" id="file-attempts-${f.id}">${f.attempts || 0}</td>
+                            <td class="px-4 py-3" id="file-error-${f.id}">${errBtn}</td>
+                            <td class="px-4 py-3 text-right" id="file-retry-${f.id}">${retryBtn}</td>
+                        </tr>
+                    `;
+                }).join('');
+
+                lucide.createIcons();
+            } catch (err) {
+                tbody.innerHTML = `<tr><td colspan="9" class="px-4 py-8 text-center text-rose-400">Error: ${err.message}</td></tr>`;
+            }
+        }
+
+        // ==================== MULTI-TASK SYNCHRONIZATION CONTROLS ====================
+        function setTaskDestType(type) {
+            currentTaskDestType = type;
+            const btnS3 = document.getElementById('task-btn-dest-s3');
+            const btnFtp = document.getElementById('task-btn-dest-ftp');
+            const secS3 = document.getElementById('task-dest-s3-section');
+            const secFtp = document.getElementById('task-dest-ftp-section');
+
+            if (type === 's3') {
+                btnS3.classList.add('bg-indigo-600', 'text-white');
+                btnS3.classList.remove('text-slate-400');
+                btnFtp.classList.remove('bg-indigo-600', 'text-white');
+                btnFtp.classList.add('text-slate-400');
+                secS3.classList.remove('hidden');
+                secFtp.classList.add('hidden');
+            } else {
+                btnFtp.classList.add('bg-indigo-600', 'text-white');
+                btnFtp.classList.remove('text-slate-400');
+                btnS3.classList.remove('bg-indigo-600', 'text-white');
+                btnS3.classList.add('text-slate-400');
+                secFtp.classList.remove('hidden');
+                secS3.classList.add('hidden');
+            }
+            lucide.createIcons();
+        }
+
+        function openCreateTaskModal() {
+            document.getElementById('task-modal-title').innerText = "Nueva Tarea de Sincronización";
+            document.getElementById('task-id').value = '';
+            document.getElementById('task-form').reset();
+            document.getElementById('task-source-port').value = '22';
+            document.getElementById('task-sync-interval').value = '60';
+            document.getElementById('task-min-file-age').value = '2';
+            document.getElementById('task-auto-start').checked = true;
+            document.getElementById('task-recursive-scan').checked = true;
+            document.getElementById('task-date-from').value = '';
+            document.getElementById('task-date-to').value = '';
+            setTaskDestType('s3');
+
+            const modal = document.getElementById('task-modal');
+            modal.classList.remove('hidden');
+            modal.classList.add('flex');
+            lucide.createIcons();
+        }
+
+        async function openEditTaskModal(taskId) {
+            try {
+                const res = await fetch(`/api/tasks/${taskId}`);
+                if (!res.ok) throw new Error("No se pudo cargar la tarea");
+                const t = await res.json();
+
+                document.getElementById('task-modal-title').innerText = `Editar Tarea: ${t.name || t.alias}`;
+                document.getElementById('task-id').value = t.id;
+                document.getElementById('task-alias').value = t.alias || '';
+                document.getElementById('task-name').value = t.name || '';
+
+                // SFTP
+                document.getElementById('task-source-host').value = t.source_host || '';
+                document.getElementById('task-source-port').value = t.source_port || '22';
+                document.getElementById('task-source-user').value = t.source_user || '';
+                document.getElementById('task-source-pass').value = t.source_pass || '';
+                document.getElementById('task-source-path').value = t.source_path || '';
+                document.getElementById('task-source-key-file').value = t.source_key_file || '';
+
+                // Destination
+                setTaskDestType(t.dest_type || 's3');
+                document.getElementById('task-s3-provider').value = t.s3_provider || 'AWS';
+                document.getElementById('task-s3-bucket').value = t.s3_bucket || '';
+                document.getElementById('task-s3-access-key').value = t.s3_access_key || '';
+                document.getElementById('task-s3-secret-key').value = t.s3_secret_key || '';
+                document.getElementById('task-s3-region').value = t.s3_region || 'us-east-1';
+                document.getElementById('task-s3-endpoint').value = t.s3_endpoint || '';
+                document.getElementById('task-s3-path').value = t.s3_path || '';
+
+                document.getElementById('task-ftp-host').value = t.ftp_host || '';
+                document.getElementById('task-ftp-port').value = t.ftp_port || '21';
+                document.getElementById('task-ftp-user').value = t.ftp_user || '';
+                document.getElementById('task-ftp-pass').value = t.ftp_pass || '';
+                document.getElementById('task-ftp-path').value = t.ftp_path || '';
+
+                // Interval & Age
+                document.getElementById('task-sync-interval').value = t.sync_interval || 60;
+                document.getElementById('task-min-file-age').value = t.min_file_age !== undefined ? t.min_file_age : 2;
+                document.getElementById('task-auto-start').checked = (t.auto_start === 1 || t.auto_start === '1');
+                document.getElementById('task-recursive-scan').checked = (t.recursive_scan === 1 || t.recursive_scan === '1');
+
+                // Date range filters
+                let dFrom = t.date_from || '';
+                if (dFrom && dFrom.length === 10) dFrom += 'T00:00';
+                let dTo = t.date_to || '';
+                if (dTo && dTo.length === 10) dTo += 'T23:59';
+                document.getElementById('task-date-from').value = dFrom;
+                document.getElementById('task-date-to').value = dTo;
+
+                const modal = document.getElementById('task-modal');
+                modal.classList.remove('hidden');
+                modal.classList.add('flex');
+                lucide.createIcons();
+            } catch (err) {
+                showToast(`Error al abrir tarea: ${err.message}`, "error");
+            }
+        }
+
+        function closeTaskModal() {
+            const modal = document.getElementById('task-modal');
+            modal.classList.add('hidden');
+            modal.classList.remove('flex');
+        }
+
+        function getTaskFormData() {
+            return {
+                alias: document.getElementById('task-alias').value.trim().toUpperCase(),
+                name: document.getElementById('task-name').value.trim(),
+                source_type: 'sftp',
+                source_host: document.getElementById('task-source-host').value.trim(),
+                source_port: document.getElementById('task-source-port').value.trim(),
+                source_user: document.getElementById('task-source-user').value.trim(),
+                source_pass: document.getElementById('task-source-pass').value,
+                source_path: document.getElementById('task-source-path').value.trim(),
+                source_key_file: document.getElementById('task-source-key-file').value.trim(),
+                dest_type: currentTaskDestType,
+                s3_provider: document.getElementById('task-s3-provider').value,
+                s3_bucket: document.getElementById('task-s3-bucket').value.trim(),
+                s3_access_key: document.getElementById('task-s3-access-key').value.trim(),
+                s3_secret_key: document.getElementById('task-s3-secret-key').value,
+                s3_region: document.getElementById('task-s3-region').value.trim(),
+                s3_endpoint: document.getElementById('task-s3-endpoint').value.trim(),
+                s3_path: document.getElementById('task-s3-path').value.trim(),
+                ftp_host: document.getElementById('task-ftp-host').value.trim(),
+                ftp_port: document.getElementById('task-ftp-port').value.trim(),
+                ftp_user: document.getElementById('task-ftp-user').value.trim(),
+                ftp_pass: document.getElementById('task-ftp-pass').value,
+                ftp_path: document.getElementById('task-ftp-path').value.trim(),
+                date_from: document.getElementById('task-date-from').value.trim(),
+                date_to: document.getElementById('task-date-to').value.trim(),
+                sync_interval: parseInt(document.getElementById('task-sync-interval').value.trim(), 10) || 60,
+                min_file_age: parseInt(document.getElementById('task-min-file-age').value.trim(), 10) || 2,
+                auto_start: document.getElementById('task-auto-start').checked ? 1 : 0,
+                recursive_scan: document.getElementById('task-recursive-scan').checked ? 1 : 0
+            };
+        }
+
+        async function submitTaskForm(e) {
+            e.preventDefault();
+            const taskId = document.getElementById('task-id').value;
+            const payload = getTaskFormData();
+
+            try {
+                let res;
+                if (taskId) {
+                    res = await fetch(`/api/tasks/${taskId}`, {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+                } else {
+                    res = await fetch('/api/tasks', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+                }
+                const data = await res.json();
+                if (res.ok) {
+                    showToast(data.message || "Tarea guardada con éxito", "success");
+                    closeTaskModal();
+                    loadTasks();
+                    loadAliases();
+                    fetchStatus();
+                } else {
+                    showToast(data.detail || "Error al guardar la tarea", "error");
+                }
+            } catch (err) {
+                showToast(`Error de red: ${err.message}`, "error");
+            }
+        }
+
+        async function deleteTask(taskId, taskName) {
+            if (!confirm(`¿Estás seguro de que deseas eliminar la tarea '${taskName}'? Esto no borrará los archivos ya transferidos.`)) {
+                return;
+            }
+            try {
+                const res = await fetch(`/api/tasks/${taskId}`, { method: 'DELETE' });
+                const data = await res.json();
+                if (res.ok) {
+                    showToast(data.message || "Tarea eliminada", "success");
+                    loadTasks();
+                    loadAliases();
+                    loadFiles(currentPage);
+                    fetchStatus();
+                } else {
+                    showToast(data.detail || "Error al eliminar tarea", "error");
+                }
+            } catch (err) {
+                showToast(`Error de red: ${err.message}`, "error");
+            }
+        }
+
+        async function controlTaskById(taskId, action) {
+            try {
+                if (action === 'stop' || action === 'pause') {
+                    hideTransferBanner();
+                }
+                const res = await fetch(`/api/tasks/${taskId}/control/${action}`, { method: 'POST' });
+                const data = await res.json();
+                if (res.ok) {
+                    showToast(`Acción '${action}' aplicada a la tarea`, "success");
+                    if (action === 'stop' || action === 'pause') {
+                        hideTransferBanner();
+                        loadFiles(currentPage, true);
+                    }
+                    loadTasks(true);
+                    fetchStatus();
+                } else {
+                    showToast(data.detail || "Error ejecutando acción", "error");
+                }
+            } catch (err) {
+                showToast(`Error de red: ${err.message}`, "error");
+            }
+        }
+
+        async function loadTasks(silent = false) {
+            const container = document.getElementById('tasks-container');
+            if (!container) return;
+            if (!silent) {
+                container.innerHTML = `
+                    <div class="col-span-full py-12 text-center text-slate-500 font-mono text-xs">
+                        <i data-lucide="loader" class="w-6 h-6 animate-spin mx-auto mb-2 text-indigo-400"></i>
+                        Cargando tareas activas...
+                    </div>
+                `;
+                lucide.createIcons();
+            }
+
+            try {
+                const res = await fetch('/api/tasks');
+                if (!res.ok) throw new Error("Error al consultar tareas");
+                const data = await res.json();
+                const tasks = data.tasks || [];
+
+                if (tasks.length === 0) {
+                    container.innerHTML = `
+                        <div class="col-span-full py-12 text-center text-slate-400 bg-slate-900/40 border border-slate-800 rounded-2xl p-8 space-y-3">
+                            <i data-lucide="layers" class="w-10 h-10 mx-auto text-slate-600"></i>
+                            <div class="text-sm font-semibold text-slate-300">No hay tareas de sincronización configuradas</div>
+                            <p class="text-xs text-slate-500 max-w-md mx-auto">
+                                Crea una tarea para sincronizar carpetas del servidor NAS con S3 o FTP de forma continua e independiente.
+                            </p>
+                            <div class="flex items-center justify-center gap-2 pt-2">
+                                <button onclick="openCreateTaskModal()" class="flex items-center gap-1.5 px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-semibold shadow-md shadow-indigo-900/30 transition">
+                                    <i data-lucide="plus-circle" class="w-4 h-4"></i> Crear Tarea
+                                </button>
+                            </div>
+                        </div>
+                    `;
+                    lucide.createIcons();
+                    return;
+                }
+
+                container.innerHTML = tasks.map(t => {
+                    const state = t.live_state || t.state || 'stopped';
+                    let stateBadge = '';
+                    let actionBtns = '';
+
+                    if (state === 'running') {
+                        stateBadge = `<span class="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 text-[10px] font-bold"><span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span> ACTIVO</span>`;
+                        actionBtns = `
+                            <button onclick="controlTaskById(${t.id}, 'sync_now')" title="Sincronizar ahora" class="px-2.5 py-1.5 bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 rounded-lg text-xs font-medium transition flex items-center gap-1">
+                                <i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i> Sincronizar Ya
+                            </button>
+                            <button onclick="controlTaskById(${t.id}, 'pause')" title="Pausar ciclo" class="px-2.5 py-1.5 bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/30 rounded-lg text-xs font-medium transition flex items-center gap-1">
+                                <i data-lucide="pause" class="w-3.5 h-3.5"></i> Pausar
+                            </button>
+                            <button onclick="controlTaskById(${t.id}, 'stop')" title="Detener tarea" class="px-2.5 py-1.5 bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 border border-rose-500/30 rounded-lg text-xs font-medium transition flex items-center gap-1">
+                                <i data-lucide="square" class="w-3.5 h-3.5"></i> Detener
+                            </button>
+                        `;
+                    } else if (state === 'paused') {
+                        stateBadge = `<span class="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/30 text-[10px] font-bold"><span class="w-2 h-2 rounded-full bg-amber-400"></span> PAUSADO</span>`;
+                        actionBtns = `
+                            <button onclick="controlTaskById(${t.id}, 'resume')" title="Reanudar" class="px-2.5 py-1.5 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 rounded-lg text-xs font-medium transition flex flex-row items-center gap-1.5 whitespace-nowrap">
+                                <i data-lucide="play" class="w-3.5 h-3.5 fill-current shrink-0"></i> <span>Reanudar</span>
+                            </button>
+                            <button onclick="controlTaskById(${t.id}, 'stop')" title="Detener tarea" class="px-2.5 py-1.5 bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 border border-rose-500/30 rounded-lg text-xs font-medium transition flex flex-row items-center gap-1.5 whitespace-nowrap">
+                                <i data-lucide="square" class="w-3.5 h-3.5 fill-current shrink-0"></i> <span>Detener</span>
+                            </button>
+                        `;
+                    } else {
+                        stateBadge = `<span class="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-slate-800 text-slate-400 border border-slate-700 text-[10px] font-bold"><span class="w-2 h-2 rounded-full bg-slate-500"></span> DETENIDO</span>`;
+                        actionBtns = `
+                            <button onclick="controlTaskById(${t.id}, 'start')" title="Iniciar tarea" class="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-semibold transition flex flex-row items-center gap-1.5 shadow-sm whitespace-nowrap">
+                                <i data-lucide="play" class="w-3.5 h-3.5 fill-current shrink-0"></i> <span>Iniciar</span>
+                            </button>
+                        `;
+                    }
+
+                    const destDesc = t.dest_type === 's3' 
+                        ? `S3: ${t.s3_bucket || ''}${t.s3_path ? '/' + t.s3_path : ''}`
+                        : `FTP: ${t.ftp_host || ''}${t.ftp_path || ''}`;
+
+                    const aliasColor = t.alias === 'STRAIN' ? 'bg-indigo-500/20 text-indigo-300 border-indigo-500/30' :
+                                       t.alias === 'FBE' ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30' :
+                                       'bg-violet-500/20 text-violet-300 border-violet-500/30';
+
+                    const activeTransferBanner = (t.is_syncing && t.current_file) ? `
+                        <div class="mt-3 p-2 bg-indigo-950/60 border border-indigo-500/30 rounded-lg flex items-center gap-2 text-[11px] text-indigo-200">
+                            <i data-lucide="loader" class="w-3.5 h-3.5 animate-spin text-indigo-400 shrink-0"></i>
+                            <span class="truncate">Enviando: <b>${t.current_file}</b></span>
+                        </div>
+                    ` : '';
+
+                    let dateFilterBadge = '';
+                    if (t.date_from || t.date_to) {
+                        let filterText = '';
+                        if (t.date_from && t.date_to) {
+                            filterText = `${t.date_from.replace('T', ' ')} → ${t.date_to.replace('T', ' ')}`;
+                        } else if (t.date_from) {
+                            filterText = `Desde: ${t.date_from.replace('T', ' ')}`;
+                        } else {
+                            filterText = `Hasta: ${t.date_to.replace('T', ' ')}`;
+                        }
+                        dateFilterBadge = `
+                            <div class="mt-2.5 px-2.5 py-1.5 bg-indigo-950/40 border border-indigo-500/30 rounded-lg flex items-center gap-1.5 text-[11px] text-indigo-300 font-mono">
+                                <i data-lucide="calendar" class="w-3.5 h-3.5 text-indigo-400 shrink-0"></i>
+                                <span class="truncate">Filtro fecha: <b>${filterText}</b></span>
+                            </div>
+                        `;
+                    }
+
+                    return `
+                        <div class="bg-slate-900/70 border border-slate-800 rounded-2xl p-5 flex flex-col justify-between hover:border-slate-750 transition shadow-sm space-y-4">
+                            <div>
+                                <!-- Header: Alias & State -->
+                                <div class="flex items-start justify-between gap-2 pb-3 border-b border-slate-800/80">
+                                    <div class="flex items-center gap-2.5 min-w-0">
+                                        <span class="px-2.5 py-1 rounded-lg font-mono text-xs font-bold border tracking-wider ${aliasColor}">
+                                            ${t.alias}
+                                        </span>
+                                        <div class="min-w-0">
+                                            <h3 class="text-sm font-bold text-white truncate" title="${t.name || t.alias}">${t.name || t.alias}</h3>
+                                            <p class="text-[11px] text-slate-400 font-mono truncate">SFTP: ${t.source_host || 'localhost'}:${t.source_path || '/'}</p>
+                                        </div>
+                                    </div>
+                                    <div class="shrink-0">
+                                        ${stateBadge}
+                                    </div>
+                                </div>
+
+                                <!-- Details Grid -->
+                                <div class="grid grid-cols-3 gap-2 mt-3 text-[11px]">
+                                    <div class="bg-slate-950/60 p-2.5 rounded-lg border border-slate-800/60">
+                                        <span class="text-slate-500 block text-[10px] uppercase font-semibold">Destino</span>
+                                        <span class="font-mono text-slate-200 truncate block mt-0.5" title="${destDesc}">${destDesc}</span>
+                                    </div>
+                                    <div class="bg-slate-950/60 p-2.5 rounded-lg border border-slate-800/60">
+                                        <span class="text-slate-500 block text-[10px] uppercase font-semibold">Intervalo</span>
+                                        <span class="font-mono text-slate-200 block mt-0.5">${t.sync_interval || 60}s</span>
+                                    </div>
+                                    <div class="bg-slate-950/60 p-2.5 rounded-lg border border-slate-800/60">
+                                        <span class="text-slate-500 block text-[10px] uppercase font-semibold" title="Solo se registran y sincronizan archivos con más de este tiempo de antigüedad">Antigüedad</span>
+                                        <span class="font-mono text-slate-200 block mt-0.5">&gt;${t.min_file_age !== undefined ? t.min_file_age : 2} min</span>
+                                    </div>
+                                </div>
+
+                                ${dateFilterBadge}
+                                ${activeTransferBanner}
+                            </div>
+
+                            <!-- Footer / Actions Bar -->
+                            <div class="flex items-center justify-between pt-2 border-t border-slate-800/80">
+                                <div class="flex items-center gap-1.5">
+                                    ${actionBtns}
+                                </div>
+                                <div class="flex items-center gap-1">
+                                    <button onclick="pingTask(${t.id}, 'source')" title="Ping al Servidor de Origen (NAS SFTP)" class="p-1.5 hover:bg-slate-800 text-slate-400 hover:text-emerald-400 rounded-lg transition">
+                                        <i data-lucide="server" class="w-4 h-4"></i>
+                                    </button>
+                                    <button onclick="pingTask(${t.id}, 'destination')" title="Ping al Almacenamiento Destino (S3 / FTP)" class="p-1.5 hover:bg-slate-800 text-slate-400 hover:text-sky-400 rounded-lg transition">
+                                        <i data-lucide="cloud" class="w-4 h-4"></i>
+                                    </button>
+                                    <button onclick="scanTaskByIdPreview(${t.id})" title="Escanear archivos NAS" class="p-1.5 hover:bg-slate-800 text-slate-400 hover:text-indigo-400 rounded-lg transition">
+                                        <i data-lucide="scan" class="w-4 h-4"></i>
+                                    </button>
+                                    <button onclick="openEditTaskModal(${t.id})" title="Configuración de la tarea" class="p-1.5 hover:bg-slate-800 text-slate-400 hover:text-slate-200 rounded-lg transition">
+                                        <i data-lucide="settings" class="w-4 h-4"></i>
+                                    </button>
+                                    <button onclick="deleteTask(${t.id}, '${(t.name || t.alias).replace(/'/g, "\\'")}')" title="Eliminar tarea" class="p-1.5 hover:bg-slate-800 text-slate-400 hover:text-rose-400 rounded-lg transition">
+                                        <i data-lucide="trash-2" class="w-4 h-4"></i>
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                }).join('');
+
+                lucide.createIcons();
+            } catch (err) {
+                container.innerHTML = `
+                    <div class="col-span-full py-8 text-center text-rose-400 font-mono text-xs">
+                        Error al cargar tareas: ${err.message}
+                    </div>
+                `;
+            }
+        }
+
+        // ==================== SCAN PREVIEW FUNCTIONS ====================
+        async function scanCurrentTaskPreview() {
+            const payload = { settings: getTaskFormData() };
+            executeRemoteScanPreview(payload);
+        }
+
+        async function scanTaskByIdPreview(taskId) {
+            try {
+                const res = await fetch(`/api/tasks/${taskId}`);
+                if (!res.ok) throw new Error("No se pudo cargar la tarea");
+                const t = await res.json();
+                const payload = { settings: t };
+                executeRemoteScanPreview(payload);
+            } catch (err) {
+                showToast(`Error: ${err.message}`, "error");
+            }
+        }
+
+        async function executeRemoteScanPreview(payload) {
+            const modal = document.getElementById('scan-preview-modal');
+            const content = document.getElementById('scan-preview-content');
+            const countSpan = document.getElementById('scan-preview-count');
+            const sizeSpan = document.getElementById('scan-preview-size');
+
+            modal.classList.remove('hidden');
+            modal.classList.add('flex');
+            countSpan.innerText = 'Escaneando...';
+            sizeSpan.innerText = 'Consultando SFTP';
+            content.innerHTML = `
+                <div class="text-center py-12 text-slate-400">
+                    <i data-lucide="loader" class="w-8 h-8 animate-spin mx-auto mb-3 text-indigo-400"></i>
+                    <div class="text-slate-300 font-medium">Conectando con el servidor SFTP...</div>
+                    <div class="text-[11px] text-slate-500 mt-1">Explorando archivos y subdirectorios de la carpeta configurada</div>
+                </div>
+            `;
+            lucide.createIcons();
+
+            try {
+                const res = await fetch('/api/tasks/scan-preview', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                const data = await res.json();
+
+                if (!data.success) {
+                    countSpan.innerText = '0 archivos';
+                    sizeSpan.innerText = 'Fallo';
+                    content.innerHTML = `
+                        <div class="p-4 bg-rose-950/40 border border-rose-500/30 rounded-xl text-rose-300 space-y-2">
+                            <div class="flex items-center gap-2 font-bold text-rose-400">
+                                <i data-lucide="alert-circle" class="w-4 h-4"></i> No se pudo escanear el servidor SFTP
+                            </div>
+                            <pre class="font-mono text-xs whitespace-pre-wrap bg-slate-950 p-3 rounded-lg border border-slate-800 text-rose-300 select-all">${data.message || 'Error desconocido'}</pre>
+                        </div>
+                    `;
+                    lucide.createIcons();
+                    return;
+                }
+
+                countSpan.innerText = `${data.count} archivo(s) encontrados`;
+                sizeSpan.innerText = formatBytes(data.total_size) + ' totales';
+
+                if (data.files.length === 0) {
+                    content.innerHTML = `
+                        <div class="text-center py-12 text-slate-500">
+                            <i data-lucide="folder-minus" class="w-8 h-8 mx-auto mb-2 text-slate-600"></i>
+                            No se encontraron archivos en la ruta especificada. La carpeta está vacía o no tiene permisos de lectura.
+                        </div>
+                    `;
+                    lucide.createIcons();
+                    return;
+                }
+
+                content.innerHTML = `
+                    <div class="divide-y divide-slate-800/80 bg-slate-950/70 border border-slate-800 rounded-xl overflow-hidden">
+                        ${data.files.map(f => {
+                            return `
+                                <div class="p-2.5 flex items-center justify-between gap-3 hover:bg-slate-900/50 transition">
+                                    <div class="flex items-center gap-2 min-w-0">
+                                        <i data-lucide="file" class="w-4 h-4 text-indigo-400 shrink-0"></i>
+                                        <span class="font-mono text-slate-200 truncate" title="${f.Path || f.Name}">${f.Path || f.Name}</span>
+                                    </div>
+                                    <div class="flex items-center gap-4 shrink-0 text-slate-400 text-[11px] font-mono">
+                                        <span>${formatBytes(f.Size || 0)}</span>
+                                        <span class="hidden sm:inline text-slate-500">${f.ModTime ? f.ModTime.substring(0, 19).replace('T', ' ') : ''}</span>
+                                    </div>
+                                </div>
+                            `;
+                        }).join('')}
+                    </div>
+                    ${data.count > data.files.length ? `<div class="text-center text-[11px] text-slate-500 py-2">Mostrando los primeros ${data.files.length} de ${data.count} archivos</div>` : ''}
+                `;
+                lucide.createIcons();
+            } catch (err) {
+                countSpan.innerText = 'Error';
+                sizeSpan.innerText = '-';
+                content.innerHTML = `
+                    <div class="p-4 bg-rose-950/40 border border-rose-500/30 rounded-xl text-rose-300">
+                        Error de red al escanear: ${err.message}
+                    </div>
+                `;
+            }
+        }
+
+        function closeScanPreviewModal() {
+            const modal = document.getElementById('scan-preview-modal');
+            modal.classList.add('hidden');
+            modal.classList.remove('flex');
+        }
+
+        // ==================== PING & NETWORK DIAGNOSTICS (TOAST DIRECTO) ====================
+        function showPingResultToast(data, target = 'all') {
+            if (!data) return;
+
+            if (data.source && (target === 'source' || target === 'all')) {
+                const s = data.source;
+                const hostInfo = s.host ? `${s.host}:${s.port}` : 'Origen';
+                if (s.reachable) {
+                    const lat = (s.latency_ms !== null && s.latency_ms !== undefined) ? `${s.latency_ms} ms` : 'OK';
+                    showToast(`Ping Origen (${hostInfo}): Conexión exitosa (${lat})`, "success");
+                } else {
+                    const err = s.error || s.details || "Inalcanzable";
+                    showToast(`Ping Origen (${hostInfo}) falló: ${err}`, "error");
+                }
+            }
+
+            if (data.destination && (target === 'destination' || target === 'all')) {
+                const d = data.destination;
+                const hostInfo = d.host ? `${d.host}:${d.port}` : 'Destino';
+                if (d.reachable) {
+                    const lat = (d.latency_ms !== null && d.latency_ms !== undefined) ? `${d.latency_ms} ms` : 'OK';
+                    showToast(`Ping Destino (${hostInfo}): Conexión exitosa (${lat})`, "success");
+                } else {
+                    const err = d.error || d.details || "Inalcanzable";
+                    showToast(`Ping Destino (${hostInfo}) falló: ${err}`, "error");
+                }
+            }
+        }
+
+        async function pingGlobalEndpoint(target = 'source') {
+            const label = target === 'source' ? 'Origen (SFTP NAS)' : 'Destino (S3 / FTP)';
+            showToast(`Haciendo ping a ${label}...`, "info");
+            try {
+                const res = await fetch(`/api/network/ping?target=${target}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({})
+                });
+                const data = await res.json();
+                if (!res.ok) {
+                    showToast(data.detail || `Error al hacer ping a ${label}`, "error");
+                    return;
+                }
+                showPingResultToast(data, target);
+            } catch (err) {
+                showToast(`Fallo al hacer ping: ${err.message}`, "error");
+            }
+        }
+
+        // Backward-compatible alias for top-bar buttons
+        function openPingModal(target = 'source') {
+            pingGlobalEndpoint(target);
+        }
+
+        async function pingTask(taskId, target = 'source') {
+            const label = target === 'source' ? 'Origen (SFTP NAS)' : 'Destino (S3 / FTP)';
+            showToast(`Haciendo ping a ${label}...`, "info");
+            try {
+                const res = await fetch(`/api/tasks/${taskId}/ping?target=${target}`, {
+                    method: 'POST'
+                });
+                const data = await res.json();
+                if (!res.ok) {
+                    showToast(data.detail || `Error al hacer ping a ${label}`, "error");
+                    return;
+                }
+                showPingResultToast(data, target);
+            } catch (err) {
+                showToast(`Fallo al hacer ping: ${err.message}`, "error");
+            }
+        }
+
+        async function pingCurrentModalTask(target = 'source') {
+            const formSettings = getTaskFormData();
+            if (target === 'source' && !formSettings.source_host) {
+                showToast("Por favor ingresa al menos el Host / IP del servidor SFTP de origen", "error");
+                return;
+            }
+            if (target === 'destination' && formSettings.dest_type === 'ftp' && !formSettings.ftp_host) {
+                showToast("Por favor ingresa el Host / IP del servidor FTP de destino", "error");
+                return;
+            }
+            const label = target === 'source' ? 'Origen (SFTP NAS)' : 'Destino (S3 / FTP)';
+            showToast(`Haciendo ping a ${label}...`, "info");
+            try {
+                const res = await fetch(`/api/network/ping?target=${target}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ settings: formSettings })
+                });
+                const data = await res.json();
+                if (!res.ok) {
+                    showToast(data.detail || `Error al hacer ping a ${label}`, "error");
+                    return;
+                }
+                showPingResultToast(data, target);
+            } catch (err) {
+                showToast(`Fallo al hacer ping: ${err.message}`, "error");
+            }
+        }
+
+        async function testCurrentModalDest() {
+            const formSettings = getTaskFormData();
+            const destType = (formSettings.dest_type || 's3').toLowerCase();
+            if (destType === 'ftp' && !formSettings.ftp_host) {
+                showToast("Por favor ingresa el Host / IP del servidor FTP", "error");
+                return;
+            }
+            if (destType === 's3' && (!formSettings.s3_access_key || !formSettings.s3_secret_key)) {
+                showToast("Por favor ingresa Access Key y Secret Key de S3", "error");
+                return;
+            }
+            showToast(`Probando autenticación y conexión con destino ${destType.toUpperCase()} (vía Rclone)...`, "info");
+            try {
+                const res = await fetch('/api/config/test-dest', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ settings: formSettings })
+                });
+                const data = await res.json();
+                if (data.success) {
+                    showToast(data.message, "success");
+                } else {
+                    showToast(data.message, "error");
+                }
+            } catch (err) {
+                showToast(`Error al probar destino: ${err.message}`, "error");
+            }
+        }
+
+
+        function changePage(delta) {
+            const target = currentPage + delta;
+            if (target >= 1 && target <= totalPages) {
+                loadFiles(target);
+            }
+        }
+
+        function debounceLoadFiles() {
+            clearTimeout(searchTimeout);
+            searchTimeout = setTimeout(() => loadFiles(1), 350);
+        }
+
+        // Retry Single File
+        async function retrySingleFile(fileId) {
+            try {
+                const res = await fetch(`/api/files/${fileId}/retry`, { method: 'POST' });
+                if (res.ok) {
+                    showToast("Archivo reencolado con éxito", "success");
+                    loadFiles(currentPage);
+                    fetchStatus();
+                } else {
+                    showToast("No se pudo reencolar el archivo", "error");
+                }
+            } catch (err) {
+                showToast(err.message, "error");
+            }
+        }
+
+        // Retry All Errors
+        async function retryAllErrors() {
+            try {
+                const res = await fetch(`/api/files/retry-all-errors`, { method: 'POST' });
+                const data = await res.json();
+                if (res.ok) {
+                    showToast(data.message || "Archivos reencolados", "success");
+                    loadFiles(1);
+                    fetchStatus();
+                } else {
+                    showToast("Error al reintentar archivos", "error");
+                }
+            } catch (err) {
+                showToast(err.message, "error");
+            }
+        }
+
+        // Load Remotes Config
+        async function loadConfiguration() {
+            try {
+                const res = await fetch('/api/config');
+                if (!res.ok) return;
+                const cfg = await res.json();
+
+                // SFTP
+                document.getElementById('source_host').value = cfg.source_host || '';
+                document.getElementById('source_port').value = cfg.source_port || '22';
+                document.getElementById('source_user').value = cfg.source_user || '';
+                document.getElementById('source_pass').value = cfg.source_pass || '';
+                document.getElementById('source_key_file').value = cfg.source_key_file || '';
+                document.getElementById('source_path').value = cfg.source_path || '';
+
+                // Dest Type
+                setDestType(cfg.dest_type || 's3');
+
+                // S3
+                document.getElementById('s3_provider').value = cfg.s3_provider || 'AWS';
+                document.getElementById('s3_bucket').value = cfg.s3_bucket || '';
+                document.getElementById('s3_access_key').value = cfg.s3_access_key || '';
+                document.getElementById('s3_secret_key').value = cfg.s3_secret_key || '';
+                document.getElementById('s3_region').value = cfg.s3_region || 'us-east-1';
+                document.getElementById('s3_endpoint').value = cfg.s3_endpoint || '';
+                document.getElementById('s3_path').value = cfg.s3_path || '';
+
+                // FTP
+                document.getElementById('ftp_host').value = cfg.ftp_host || '';
+                document.getElementById('ftp_port').value = cfg.ftp_port || '21';
+                document.getElementById('ftp_user').value = cfg.ftp_user || '';
+                document.getElementById('ftp_pass').value = cfg.ftp_pass || '';
+                document.getElementById('ftp_path').value = cfg.ftp_path || '';
+
+                // Scheduler
+                document.getElementById('sync_interval').value = cfg.sync_interval || '60';
+                document.getElementById('auto_start').checked = (cfg.auto_start === '1');
+                document.getElementById('recursive_scan').checked = (cfg.recursive_scan === '1');
+            } catch (err) {
+                console.error("Error loading config:", err);
+            }
+        }
+
+        // Collect Form Data
+        function getFormData() {
+            return {
+                source_type: "sftp",
+                source_host: document.getElementById('source_host').value.trim(),
+                source_port: document.getElementById('source_port').value.trim(),
+                source_user: document.getElementById('source_user').value.trim(),
+                source_pass: document.getElementById('source_pass').value,
+                source_key_file: document.getElementById('source_key_file').value.trim(),
+                source_path: document.getElementById('source_path').value.trim(),
+                dest_type: currentDestType,
+                s3_provider: document.getElementById('s3_provider').value,
+                s3_bucket: document.getElementById('s3_bucket').value.trim(),
+                s3_access_key: document.getElementById('s3_access_key').value.trim(),
+                s3_secret_key: document.getElementById('s3_secret_key').value,
+                s3_region: document.getElementById('s3_region').value.trim(),
+                s3_endpoint: document.getElementById('s3_endpoint').value.trim(),
+                s3_path: document.getElementById('s3_path').value.trim(),
+                ftp_host: document.getElementById('ftp_host').value.trim(),
+                ftp_port: document.getElementById('ftp_port').value.trim(),
+                ftp_user: document.getElementById('ftp_user').value.trim(),
+                ftp_pass: document.getElementById('ftp_pass').value,
+                ftp_path: document.getElementById('ftp_path').value.trim(),
+                sync_interval: document.getElementById('sync_interval').value.trim(),
+                auto_start: document.getElementById('auto_start').checked ? "1" : "0",
+                recursive_scan: document.getElementById('recursive_scan').checked ? "1" : "0",
+                delete_source_after: "0",
+                max_retries: "3"
+            };
+        }
+
+        // Save Configuration
+        async function saveConfiguration(e) {
+            e.preventDefault();
+            const payload = getFormData();
+
+            try {
+                const res = await fetch('/api/config', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                const data = await res.json();
+                if (res.ok) {
+                    showToast("Configuración guardada y rclone.conf regenerado.", "success");
+                    loadLogs();
+                } else {
+                    showToast(data.detail || "Error al guardar configuración", "error");
+                }
+            } catch (err) {
+                showToast(`Error al guardar: ${err.message}`, "error");
+            }
+        }
+
+        // Test Source SFTP Connection
+        async function testSourceConnection() {
+            showToast("Probando conexión SFTP...", "info");
+            const payload = { settings: getFormData() };
+            try {
+                const res = await fetch('/api/config/test-source', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                const data = await res.json();
+                if (data.success) {
+                    showToast(data.message, "success");
+                } else {
+                    showToast(data.message, "error");
+                }
+            } catch (err) {
+                showToast(`Fallo en prueba: ${err.message}`, "error");
+            }
+        }
+
+        // Test Destination Connection (S3 / FTP)
+        async function testDestConnection() {
+            showToast(`Probando conexión destino (${currentDestType.toUpperCase()})...`, "info");
+            const payload = { settings: getFormData() };
+            try {
+                const res = await fetch('/api/config/test-dest', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                const data = await res.json();
+                if (data.success) {
+                    showToast(data.message, "success");
+                } else {
+                    showToast(data.message, "error");
+                }
+            } catch (err) {
+                showToast(`Fallo en prueba: ${err.message}`, "error");
+            }
+        }
+
+        // Load Logs
+        async function loadLogs() {
+            try {
+                const res = await fetch('/api/logs?limit=40');
+                if (!res.ok) return;
+                const logs = await res.json();
+                const container = document.getElementById('logs-container');
+                if (!logs || logs.length === 0) {
+                    container.innerHTML = `<div class="text-slate-500 text-center py-4">Sin registros aún.</div>`;
+                    return;
+                }
+                container.innerHTML = logs.map(l => {
+                    const color = l.level === 'ERROR' ? 'text-rose-400' : l.level === 'WARNING' ? 'text-amber-400' : 'text-slate-300';
+                    const time = l.timestamp ? l.timestamp.replace('T', ' ').substring(0, 19) : '';
+                    return `
+                        <div class="border-b border-slate-900 pb-1">
+                            <span class="text-slate-500">[${time}]</span>
+                            <span class="font-bold ${color}">[${l.level}]</span>
+                            <span class="${color}">${l.message}</span>
+                            ${l.details ? `<div class="text-slate-500 text-[10px] pl-4 whitespace-pre-wrap">${l.details}</div>` : ''}
+                        </div>
+                    `;
+                }).join('');
+            } catch (err) {
+                console.error("Error loading logs:", err);
+            }
+        }
+
+        // Load History
+        async function loadHistory() {
+            try {
+                const res = await fetch('/api/history?limit=10');
+                if (!res.ok) return;
+                const history = await res.json();
+                const container = document.getElementById('history-container');
+                if (!history || history.length === 0) {
+                    container.innerHTML = `<div class="text-slate-500 text-center py-4">Sin ciclos registrados.</div>`;
+                    return;
+                }
+                container.innerHTML = history.map(h => {
+                    const statusColor = h.status === 'completed' ? 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20' : 
+                                        h.status === 'interrupted' ? 'text-amber-400 bg-amber-500/10 border-amber-500/20' : 
+                                        'text-rose-400 bg-rose-500/10 border-rose-500/20';
+                    return `
+                        <div class="bg-slate-950 p-3 rounded-lg border border-slate-800 space-y-1">
+                            <div class="flex items-center justify-between">
+                                <span class="font-semibold text-slate-200">Ciclo #${h.id}</span>
+                                <span class="px-1.5 py-0.5 rounded text-[10px] border ${statusColor}">${h.status.toUpperCase()}</span>
+                            </div>
+                            <div class="text-[11px] text-slate-400">
+                                <span>Descubiertos: <strong class="text-slate-200">${h.files_discovered}</strong></span> • 
+                                <span>Enviados: <strong class="text-emerald-300">${h.files_transferred}</strong></span> • 
+                                <span>Errores: <strong class="text-rose-400">${h.files_failed}</strong></span>
+                            </div>
+                            <div class="text-[10px] text-slate-500">${h.started_at ? h.started_at.replace('T', ' ').substring(0, 19) : ''}</div>
+                        </div>
+                    `;
+                }).join('');
+            } catch (err) {
+                console.error("Error loading history:", err);
+            }
+        }
+
+        // Service Status & Installation
+        async function checkServiceStatus() {
+            try {
+                const res = await fetch('/api/service/status');
+                if (!res.ok) return;
+                const data = await res.json();
+                const badge = document.getElementById('service-status-badge');
+                if (data.is_installed) {
+                    badge.className = 'px-2 py-0.5 rounded font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20';
+                    badge.innerText = 'Servicio Registrado & Activo';
+                } else {
+                    badge.className = 'px-2 py-0.5 rounded font-medium bg-amber-500/10 text-amber-400 border border-amber-500/20';
+                    badge.innerText = 'No instalado en el sistema';
+                }
+            } catch (err) {
+                console.error("Error checking service:", err);
+            }
+        }
+
+        async function installSystemService() {
+            showToast("Registrando servicio en el sistema operativo...", "info");
+            try {
+                const res = await fetch('/api/service/install', { method: 'POST' });
+                const data = await res.json();
+                if (data.success) {
+                    showToast(data.message, "success");
+                    checkServiceStatus();
+                    loadLogs();
+                } else {
+                    showToast(data.message, "error");
+                }
+            } catch (err) {
+                showToast(`Error al registrar servicio: ${err.message}`, "error");
+            }
+        }
+
+        // Error Detail Modal
+        function openErrorModal(filePath, encodedMsg) {
+            document.getElementById('modal-error-file').innerText = filePath;
+            document.getElementById('modal-error-msg').innerText = decodeURIComponent(encodedMsg);
+            const modal = document.getElementById('error-modal');
+            modal.classList.remove('hidden');
+            modal.classList.add('flex');
+            lucide.createIcons();
+        }
+
+        function closeErrorModal() {
+            const modal = document.getElementById('error-modal');
+            modal.classList.add('hidden');
+            modal.classList.remove('flex');
+        }
+    </script>
+</body>
+</html>

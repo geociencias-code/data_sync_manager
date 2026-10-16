@@ -1,0 +1,23 @@
+# Python Virtual Environment
+venv/
+.venv/
+env/
+
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Runtime data & secrets
+data/sync_data.db*
+data/rclone.conf
+data/*.log
+
+# Downloaded rclone binaries in bin/ (auto-downloaded by setup)
+bin/rclone
+bin/rclone.exe
+
+# macOS / OS files
+.DS_Store
+Thumbs.db
+
