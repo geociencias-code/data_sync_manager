@@ -123,6 +123,8 @@ class RcloneManager:
             "known_hosts_file = none",
             "connections = 1",
             "idle_timeout = 60s",
+            "md5sum_command = none",
+            "sha1sum_command = none",
         ]
         
         if obscured_sftp_pass:
@@ -259,6 +261,10 @@ class RcloneManager:
                 "--contimeout", "10s",
                 "--timeout", "15s",
                 "--max-depth", "1",
+                "--sftp-known-hosts-file", "none",
+                "--sftp-md5sum-command", "none",
+                "--sftp-sha1sum-command", "none",
+                "--ignore-checksum",
                 target
             ]
             
@@ -382,7 +388,11 @@ class RcloneManager:
                 "--retries", "3",
                 "--low-level-retries", "10",
                 "--contimeout", "20s",
-                "--timeout", "90s"
+                "--timeout", "90s",
+                "--sftp-known-hosts-file", "none",
+                "--sftp-md5sum-command", "none",
+                "--sftp-sha1sum-command", "none",
+                "--ignore-checksum"
             ]
             if min_age:
                 cmd.extend(["--min-age", str(min_age)])
@@ -462,7 +472,11 @@ class RcloneManager:
                 "--retries", "3",
                 "--low-level-retries", "10",
                 "--contimeout", "20s",
-                "--timeout", "60s"
+                "--timeout", "60s",
+                "--sftp-known-hosts-file", "none",
+                "--sftp-md5sum-command", "none",
+                "--sftp-sha1sum-command", "none",
+                "--ignore-checksum"
             ]
             if recursive:
                 cmd.append("-R")
@@ -640,7 +654,11 @@ class RcloneManager:
             "--contimeout", "20s",
             "--timeout", "10m",
             "--ignore-existing",
+            "--ignore-checksum",
             "--no-check-certificate",
+            "--sftp-known-hosts-file", "none",
+            "--sftp-md5sum-command", "none",
+            "--sftp-sha1sum-command", "none",
             "--stats", "500ms",
             "--use-json-log",
             "-v",

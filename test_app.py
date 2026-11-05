@@ -1514,6 +1514,61 @@ class TestDataSyncApp(unittest.TestCase):
         self.assertEqual(get_res_updated.status_code, 200)
         self.assertEqual(get_res_updated.json()["max_concurrent_transfers"], 20)
 
+    def test_nas_sftp_and_checksum_flags(self):
+        """Verify that SFTP config and rclone commands include sftp hash suppression and ignore-checksum."""
+        settings = {
+            "source_type": "sftp",
+            "source_host": "nas.local",
+            "source_port": "22",
+            "source_user": "nasuser",
+            "source_pass": "pass123",
+            "dest_type": "s3",
+            "s3_bucket": "test-bucket",
+            "s3_access_key": "AKIA",
+            "s3_secret_key": "SECRET"
+        }
+        with tempfile.NamedTemporaryFile("w+", suffix=".conf", delete=False) as tmp:
+            tmp_path = Path(tmp.name)
+        try:
+            RcloneManager.generate_config_file(settings, target_path=tmp_path)
+            content = tmp_path.read_text(encoding="utf-8")
+            self.assertIn("known_hosts_file = none", content)
+            self.assertIn("md5sum_command = none", content)
+            self.assertIn("sha1sum_command = none", content)
+        finally:
+            if tmp_path.exists():
+                tmp_path.unlink()
+
+        # Check execute_file_transfer command construction
+        with unittest.mock.patch("subprocess.Popen") as mock_popen:
+            mock_proc = unittest.mock.MagicMock()
+            mock_proc.stderr = None
+            mock_proc.returncode = 0
+            mock_popen.return_value = mock_proc
+
+            ok, _ = RcloneManager.execute_file_transfer(settings, "test_file.dat")
+            self.assertTrue(ok)
+            cmd = mock_popen.call_args[0][0]
+            self.assertIn("--ignore-checksum", cmd)
+            self.assertIn("--sftp-known-hosts-file", cmd)
+            self.assertIn("--sftp-md5sum-command", cmd)
+            self.assertIn("--sftp-sha1sum-command", cmd)
+
+        # Check list_source_files command construction
+        with unittest.mock.patch("subprocess.Popen") as mock_popen:
+            mock_proc = unittest.mock.MagicMock()
+            mock_proc.communicate.return_value = ("[]", "")
+            mock_proc.returncode = 0
+            mock_popen.return_value = mock_proc
+
+            ok, _, _ = RcloneManager.list_source_files(settings)
+            self.assertTrue(ok)
+            cmd = mock_popen.call_args[0][0]
+            self.assertIn("--ignore-checksum", cmd)
+            self.assertIn("--sftp-known-hosts-file", cmd)
+            self.assertIn("--sftp-md5sum-command", cmd)
+            self.assertIn("--sftp-sha1sum-command", cmd)
+
 if __name__ == "__main__":
     unittest.main()
 
