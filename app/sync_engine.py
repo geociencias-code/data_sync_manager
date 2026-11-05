@@ -1,8 +1,10 @@
+import os
+import signal
 import asyncio
 import logging
 import subprocess
 from datetime import datetime, timedelta
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, Any, List, Set
 from pathlib import Path
 
 from app import database
@@ -26,11 +28,36 @@ class TaskRunner:
         self.current_file_id: Optional[int] = None
         self.current_file_path: Optional[str] = None
         self.current_file_progress: float = 0.0
+        self.active_processes: Dict[int, subprocess.Popen] = {}
+        self.active_files: Dict[int, str] = {}
         self.paused_file_id: Optional[int] = None
+        self.paused_file_ids: Set[int] = set()
         self.background_task: Optional[asyncio.Task] = None
         self._trigger_event: Optional[asyncio.Event] = None
         self.stop_requested: bool = False
         self.conf_path = DATA_DIR / f"rclone_task_{task_id}.conf"
+
+    def _update_runtime_state(self):
+        count = len(self.active_files)
+        if count == 0:
+            current_desc = None
+            is_syncing = False
+        elif count == 1:
+            current_desc = next(iter(self.active_files.values()))
+            is_syncing = True
+        else:
+            first_two = list(self.active_files.values())[:2]
+            current_desc = f"{count} archivos en simultáneo ({', '.join(first_two)}...)"
+            is_syncing = True
+
+        self.is_syncing = is_syncing
+        self.current_file_path = current_desc
+        database.set_task_runtime_state(
+            self.task_id, 
+            self.state, 
+            is_syncing=is_syncing, 
+            current_file=current_desc
+        )
 
     @property
     def trigger_event(self) -> asyncio.Event:
@@ -66,37 +93,74 @@ class TaskRunner:
         ws_manager.broadcast_sync("task_state", {"task_id": self.task_id, "state": self.state, "alias": alias})
         self.trigger_event.set()
 
+    @staticmethod
+    def _kill_subprocess(proc: Optional[subprocess.Popen]):
+        if not proc or proc.poll() is not None:
+            return
+        # Try killing process group first (POSIX)
+        if hasattr(os, "killpg"):
+            try:
+                pgid = os.getpgid(proc.pid)
+                os.killpg(pgid, signal.SIGTERM)
+            except Exception:
+                pass
+        try:
+            proc.terminate()
+        except Exception:
+            pass
+
+        # Force kill if still running
+        if proc.poll() is None:
+            if hasattr(os, "killpg"):
+                try:
+                    pgid = os.getpgid(proc.pid)
+                    os.killpg(pgid, signal.SIGKILL)
+                except Exception:
+                    pass
+            try:
+                proc.kill()
+            except Exception:
+                pass
+
     def pause(self):
         """Pauses this specific task immediately."""
         self.state = "paused"
         self.is_syncing = False
-        database.set_task_runtime_state(self.task_id, "paused", is_syncing=False, current_file=None)
 
-        if self.current_process and self.current_process.poll() is None:
-            try:
-                logger.info(f"Terminating active rclone process for paused task {self.task_id}...")
-                self.current_process.terminate()
-                self.current_process.kill()
-            except Exception as e:
-                logger.warning(f"Error terminating rclone process on pause: {e}")
-        self.current_process = None
+        # Kill all running rclone processes immediately
+        for proc in list(self.active_processes.values()):
+            self._kill_subprocess(proc)
+        self.active_processes.clear()
 
-        if self.current_scan_process and self.current_scan_process.poll() is None:
+        if self.current_process:
+            self._kill_subprocess(self.current_process)
+            self.current_process = None
+
+        if self.current_scan_process:
+            self._kill_subprocess(self.current_scan_process)
+            self.current_scan_process = None
+
+        # Revert all active transferring files back to pending
+        for fid in list(self.active_files.keys()):
+            self.paused_file_ids.add(fid)
+            self.paused_file_id = fid
             try:
-                self.current_scan_process.terminate()
-                self.current_scan_process.kill()
+                database.retry_file(fid)
             except Exception:
                 pass
-        self.current_scan_process = None
+        self.active_files.clear()
 
         if self.current_file_id:
             self.paused_file_id = self.current_file_id
+            self.paused_file_ids.add(self.current_file_id)
             try:
                 database.retry_file(self.current_file_id)
             except Exception:
                 pass
             self.current_file_id = None
-            self.current_file_path = None
+
+        self.current_file_path = None
+        database.set_task_runtime_state(self.task_id, "paused", is_syncing=False, current_file=None)
 
         t = self.get_task_data()
         alias = t["alias"] if t else f"#{self.task_id}"
@@ -137,24 +201,27 @@ class TaskRunner:
         self.state = "stopped"
         self.stop_requested = True
         self.paused_file_id = None
-        database.set_task_runtime_state(self.task_id, "stopped", is_syncing=False, current_file=None)
 
-        if self.current_process and self.current_process.poll() is None:
-            try:
-                logger.info(f"Terminating active rclone process for task {self.task_id}...")
-                self.current_process.terminate()
-                self.current_process.kill()
-            except Exception as e:
-                logger.error(f"Error terminating process: {e}")
-        self.current_process = None
+        # Kill all running rclone processes immediately
+        for proc in list(self.active_processes.values()):
+            self._kill_subprocess(proc)
+        self.active_processes.clear()
 
-        if self.current_scan_process and self.current_scan_process.poll() is None:
+        if self.current_process:
+            self._kill_subprocess(self.current_process)
+            self.current_process = None
+
+        if self.current_scan_process:
+            self._kill_subprocess(self.current_scan_process)
+            self.current_scan_process = None
+
+        # Revert all active transferring files back to pending
+        for fid in list(self.active_files.keys()):
             try:
-                self.current_scan_process.terminate()
-                self.current_scan_process.kill()
+                database.retry_file(fid)
             except Exception:
                 pass
-        self.current_scan_process = None
+        self.active_files.clear()
 
         if self.current_file_id:
             try:
@@ -162,7 +229,11 @@ class TaskRunner:
             except Exception:
                 pass
             self.current_file_id = None
-            self.current_file_path = None
+
+        self.paused_file_id = None
+        self.paused_file_ids.clear()
+        self.current_file_path = None
+        database.set_task_runtime_state(self.task_id, "stopped", is_syncing=False, current_file=None)
 
         t = self.get_task_data()
         alias = t["alias"] if t else f"#{self.task_id}"
@@ -179,20 +250,12 @@ class TaskRunner:
     def _register_process(self, proc: subprocess.Popen):
         self.current_process = proc
         if self.state in ("paused", "stopped") or self.stop_requested:
-            try:
-                proc.terminate()
-                proc.kill()
-            except Exception:
-                pass
+            self._kill_subprocess(proc)
 
     def _register_scan_process(self, proc: subprocess.Popen):
         self.current_scan_process = proc
         if self.state in ("paused", "stopped") or self.stop_requested:
-            try:
-                proc.terminate()
-                proc.kill()
-            except Exception:
-                pass
+            self._kill_subprocess(proc)
 
     async def scan_and_map_new_files(self, task: Optional[Dict[str, Any]] = None) -> int:
         """
@@ -223,7 +286,8 @@ class TaskRunner:
             if not success or not files_data:
                 return 0
 
-            new_c, upd_c = database.map_task_files(
+            new_c, upd_c = await asyncio.to_thread(
+                database.map_task_files,
                 self.task_id,
                 alias,
                 files_data,
@@ -310,29 +374,157 @@ class TaskRunner:
                 return {"status": "paused"}
 
             if not success:
-                cycle_status = "failed"
-                cycle_message = f"Error escaneando SFTP ({alias}): {err_msg}"
-                database.add_log("ERROR", cycle_message)
-                database.finish_sync_history_record(history_id, cycle_status, 0, 0, 0, cycle_message)
-                return {"status": "failed", "message": cycle_message}
+                pending_check = database.get_pending_task_files(self.task_id, limit=1, min_age_seconds=min_age_sec)
+                if pending_check:
+                    database.add_log("WARNING", f"Aviso al escanear SFTP ({alias}): {err_msg}. Continuando con transferencia de archivos pendientes en cola...")
+                else:
+                    cycle_status = "failed"
+                    cycle_message = f"Error escaneando SFTP ({alias}): {err_msg}"
+                    database.add_log("ERROR", cycle_message)
+                    database.finish_sync_history_record(history_id, cycle_status, 0, 0, 0, cycle_message)
+                    return {"status": "failed", "message": cycle_message}
+            else:
+                new_c, upd_c = await asyncio.to_thread(
+                    database.map_task_files,
+                    self.task_id, 
+                    alias, 
+                    files_data, 
+                    min_age_seconds=0,
+                    allow_overwrite=False,
+                    date_from=task.get("date_from"),
+                    date_to=task.get("date_to")
+                )
+                discovered_count = len(files_data)
+                database.add_log("INFO", f"[{alias}] {discovered_count} archivos listados ({new_c} nuevos registrados, existentes preservados).")
+                if new_c > 0 or upd_c > 0:
+                    ws_manager.broadcast_sync("files_changed")
+                    sync_engine.broadcast_status()
 
-            new_c, upd_c = database.map_task_files(
-                self.task_id, 
-                alias, 
-                files_data, 
-                min_age_seconds=0,
-                allow_overwrite=False,
-                date_from=task.get("date_from"),
-                date_to=task.get("date_to")
-            )
-            discovered_count = len(files_data)
-            database.add_log("INFO", f"[{alias}] {discovered_count} archivos listados ({new_c} nuevos registrados, existentes preservados).")
-            if new_c > 0 or upd_c > 0:
-                ws_manager.broadcast_sync("files_changed")
-                sync_engine.broadcast_status()
+            # 2. Transfer pending files for this task with concurrency
+            max_files_per_cycle = int(task.get("max_files_per_cycle", 0) or 0)
+            concurrency = max(1, min(int(task.get("max_concurrent_transfers", 1) or 1), 50))
+            
+            # If user configured max_files_per_cycle but max_concurrent_transfers was left at 1,
+            # allow concurrency to match max_files_per_cycle up to 50
+            if concurrency == 1 and max_files_per_cycle > 1:
+                concurrency = min(max_files_per_cycle, 50)
 
-            # 2. Transfer pending files for this task
+            semaphore = asyncio.Semaphore(concurrency)
+            state_lock = asyncio.Lock()
+
+            async def execute_single_transfer(file_row: Dict[str, Any], stagger_idx: int = 0) -> bool:
+                nonlocal transferred_count, failed_count
+                file_id = file_row["id"]
+                file_path = file_row["file_path"]
+
+                if self.state != "running" or self.stop_requested:
+                    return False
+
+                if stagger_idx > 0:
+                    await asyncio.sleep(min(0.05 * stagger_idx, 1.0))
+
+                async with semaphore:
+                    if self.state != "running" or self.stop_requested:
+                        return False
+
+                    async with state_lock:
+                        if max_files_per_cycle > 0 and transferred_count >= max_files_per_cycle:
+                            return False
+                        self.active_files[file_id] = file_path
+                        self.current_file_id = file_id
+                        database.set_file_transferring(file_id)
+                        self._update_runtime_state()
+
+                    ws_manager.broadcast_sync("file_transferring", {
+                        "task_id": self.task_id,
+                        "file_id": file_id,
+                        "file_path": file_path,
+                        "alias": alias
+                    })
+
+                    def on_transfer_progress(progress_dict: Dict[str, Any]):
+                        pct = progress_dict.get("percentage", 0.0)
+                        sync_engine.active_progress[file_id] = progress_dict
+                        ws_manager.broadcast_sync("file_progress", {
+                            "task_id": self.task_id,
+                            "file_id": file_id,
+                            "file_path": file_path,
+                            "alias": alias,
+                            **progress_dict
+                        })
+
+                    def reg_proc(proc: subprocess.Popen):
+                        self.active_processes[file_id] = proc
+                        self.current_process = proc
+                        if self.state in ("paused", "stopped") or self.stop_requested:
+                            self._kill_subprocess(proc)
+
+                    self.current_file_id = file_id
+                    try:
+                        transfer_ok, transfer_msg = await asyncio.to_thread(
+                            RcloneManager.execute_file_transfer,
+                            task,
+                            file_path,
+                            self.conf_path,
+                            reg_proc,
+                            on_transfer_progress,
+                            mod_time=file_row.get("mod_time") if file_row else None
+                        )
+                    except Exception as e:
+                        transfer_ok, transfer_msg = False, str(e)
+                    finally:
+                        self.active_processes.pop(file_id, None)
+                        sync_engine.active_progress.pop(file_id, None)
+                        if self.current_file_id == file_id:
+                            self.current_file_id = None
+                        async with state_lock:
+                            self.active_files.pop(file_id, None)
+                            self._update_runtime_state()
+
+                    is_paused = (file_id in self.paused_file_ids) or (self.paused_file_id == file_id)
+                    if self.state != "running" or self.stop_requested or is_paused:
+                        self.paused_file_ids.discard(file_id)
+                        if self.paused_file_id == file_id:
+                            self.paused_file_id = None
+                        database.retry_file(file_id)
+                        return False
+
+                    if transfer_ok:
+                        database.set_file_completed(file_id)
+                        async with state_lock:
+                            transferred_count += 1
+                        database.add_log("INFO", f"[{alias}] Enviado: {file_path}")
+                        ws_manager.broadcast_sync("file_completed", {
+                            "task_id": self.task_id,
+                            "file_id": file_id,
+                            "file_path": file_path,
+                            "alias": alias
+                        })
+                        return True
+                    else:
+                        cur_attempts = int(file_row.get("attempts", 0) or 0) + 1
+                        if cur_attempts < 3:
+                            database.retry_file(file_id)
+                            database.add_log("WARNING", f"[{alias}] Intento {cur_attempts}/3 fallido en {file_path}: {transfer_msg}. Se reintentará en el siguiente ciclo.")
+                        else:
+                            database.set_file_error(file_id, transfer_msg)
+                            async with state_lock:
+                                failed_count += 1
+                            database.add_log("ERROR", f"[{alias}] Error en {file_path}: {transfer_msg}")
+                            ws_manager.broadcast_sync("file_error", {
+                                "task_id": self.task_id,
+                                "file_id": file_id,
+                                "file_path": file_path,
+                                "alias": alias,
+                                "error": transfer_msg
+                            })
+                        return False
+
             while True:
+                if max_files_per_cycle > 0 and transferred_count >= max_files_per_cycle:
+                    database.add_log("INFO", f"[{alias}] Límite configurado de {max_files_per_cycle} archivo(s) por ciclo alcanzado ({transferred_count} enviados). Próximo ciclo en {task.get('sync_interval', 60)}s.")
+                    break
+
                 if self.state == "stopped" or self.stop_requested:
                     cycle_status = "stopped"
                     cycle_message = f"Tarea [{alias}] detenida por el usuario."
@@ -351,156 +543,33 @@ class TaskRunner:
                 self.is_syncing = True
                 database.set_task_runtime_state(self.task_id, "running", is_syncing=True)
 
-                file_row = None
-                if self.paused_file_id:
-                    target_rows = database.get_files_by_ids([self.paused_file_id])
-                    if target_rows and target_rows[0].get("status") in ("pending", "transferring"):
-                        file_row = target_rows[0]
-                    self.paused_file_id = None
+                if max_files_per_cycle > 0:
+                    needed = max_files_per_cycle - transferred_count
+                    batch_limit = min(concurrency, needed)
+                else:
+                    batch_limit = concurrency
 
-                if not file_row:
-                    next_files = database.get_pending_task_files(self.task_id, limit=1, min_age_seconds=min_age_sec)
-                    if not next_files:
-                        unmature = database.get_pending_task_files(self.task_id, limit=1, min_age_seconds=0)
-                        if unmature and min_age_sec > 0:
-                            await asyncio.sleep(3)
-                            if self.state != "running" or self.stop_requested:
-                                break
-                            continue
-                        break
-                    file_row = dict(next_files[0])
-
-                file_id = file_row["id"]
-                file_path = file_row["file_path"]
-
-                self.current_file_id = file_id
-                self.current_file_path = file_path
-                database.set_file_transferring(file_id)
-                database.set_task_runtime_state(self.task_id, self.state, is_syncing=True, current_file=file_path)
-                ws_manager.broadcast_sync("file_transferring", {
-                    "task_id": self.task_id,
-                    "file_id": file_id,
-                    "file_path": file_path,
-                    "alias": alias
-                })
-
-                def on_transfer_progress(progress_dict: Dict[str, Any]):
-                    pct = progress_dict.get("percentage", 0.0)
-                    bytes_done = progress_dict.get("bytes", 0)
-                    total_bytes = progress_dict.get("total_bytes", 0)
-                    speed = progress_dict.get("speed", 0.0)
-                    eta = progress_dict.get("eta", None)
-
-                    self.current_file_progress = pct
-                    sync_engine.active_progress[file_id] = {
-                        "percentage": pct,
-                        "bytes": bytes_done,
-                        "total_bytes": total_bytes,
-                        "speed": speed,
-                        "eta": eta
-                    }
-
-                    ws_manager.broadcast_sync("file_progress", {
-                        "task_id": self.task_id,
-                        "file_id": file_id,
-                        "file_path": file_path,
-                        "alias": alias,
-                        "percentage": pct,
-                        "bytes": bytes_done,
-                        "total_bytes": total_bytes,
-                        "speed": speed,
-                        "eta": eta
-                    })
-
-                transfer_finished = asyncio.Event()
-
-                async def periodic_watcher():
-                    scan_interval = max(10, int(task.get("sync_interval", 60)))
-                    while not transfer_finished.is_set():
-                        try:
-                            await asyncio.wait_for(transfer_finished.wait(), timeout=scan_interval)
+                next_files = database.get_pending_task_files(self.task_id, limit=batch_limit, min_age_seconds=min_age_sec)
+                if not next_files:
+                    unmature = database.get_pending_task_files(self.task_id, limit=1, min_age_seconds=0)
+                    if unmature and min_age_sec > 0:
+                        await asyncio.sleep(3)
+                        if self.state != "running" or self.stop_requested:
                             break
-                        except asyncio.TimeoutError:
-                            if self.state == "running" and not self.stop_requested:
-                                try:
-                                    await self.scan_and_map_new_files(task)
-                                except Exception as e:
-                                    logger.warning(f"Error en escaneo periódico durante transferencia: {e}")
+                        continue
+                    break
 
-                watcher_task = asyncio.create_task(periodic_watcher())
-                try:
-                    transfer_ok, transfer_msg = await asyncio.to_thread(
-                        RcloneManager.execute_file_transfer,
-                        task,
-                        file_path,
-                        self.conf_path,
-                        self._register_process,
-                        on_transfer_progress
-                    )
-                finally:
-                    transfer_finished.set()
-                    watcher_task.cancel()
-                    try:
-                        await watcher_task
-                    except asyncio.CancelledError:
-                        pass
+                file_dicts = [dict(f) for f in next_files]
+                transfer_tasks = [
+                    asyncio.create_task(execute_single_transfer(f, idx)) 
+                    for idx, f in enumerate(file_dicts)
+                ]
+                await asyncio.gather(*transfer_tasks, return_exceptions=True)
 
-                sync_engine.active_progress.pop(file_id, None)
-                self.current_file_progress = 0.0
-                self.current_process = None
-                self.current_file_id = None
-                self.current_file_path = None
-
-                if self.stop_requested or self.state == "stopped":
-                    self.paused_file_id = None
-                    database.retry_file(file_id)
+                if self.state == "stopped" or self.stop_requested:
                     cycle_status = "stopped"
                     cycle_message = f"Tarea [{alias}] detenida por el usuario."
                     break
-
-                if self.state == "paused" or self.paused_file_id:
-                    if not self.paused_file_id:
-                        self.paused_file_id = file_id
-                    database.retry_file(file_id)
-                    cycle_status = "paused"
-                    while self.state == "paused":
-                        await asyncio.sleep(0.05)
-                        if self.state == "stopped" or self.stop_requested:
-                            break
-                    if self.state == "stopped" or self.stop_requested:
-                        self.paused_file_id = None
-                        cycle_status = "stopped"
-                        cycle_message = f"Tarea [{alias}] detenida por el usuario."
-                        break
-                    self.is_syncing = True
-                    database.set_task_runtime_state(self.task_id, "running", is_syncing=True)
-                    continue
-
-                if transfer_ok:
-                    database.set_file_completed(file_id)
-                    transferred_count += 1
-                    database.add_log("INFO", f"[{alias}] Enviado: {file_path}")
-                    ws_manager.broadcast_sync("file_completed", {
-                        "task_id": self.task_id,
-                        "file_id": file_id,
-                        "file_path": file_path,
-                        "alias": alias
-                    })
-                    try:
-                        await self.scan_and_map_new_files(task)
-                    except Exception:
-                        pass
-                else:
-                    database.set_file_error(file_id, transfer_msg)
-                    failed_count += 1
-                    database.add_log("ERROR", f"[{alias}] Error en {file_path}: {transfer_msg}")
-                    ws_manager.broadcast_sync("file_error", {
-                        "task_id": self.task_id,
-                        "file_id": file_id,
-                        "file_path": file_path,
-                        "alias": alias,
-                        "error": transfer_msg
-                    })
 
         except Exception as e:
             cycle_status = "failed"
@@ -583,14 +652,21 @@ class MultiSyncEngine:
 
     @property
     def is_syncing(self) -> bool:
-        return any(r.is_syncing for r in self.runners.values())
+        return any(bool(r.is_syncing or r.active_files) for r in self.runners.values())
 
     @property
     def current_file_path(self) -> Optional[str]:
+        all_active = []
         for r in self.runners.values():
-            if r.current_file_path:
-                return r.current_file_path
-        return None
+            all_active.extend(list(r.active_files.values()))
+        if not all_active:
+            for r in self.runners.values():
+                if r.current_file_path:
+                    return r.current_file_path
+            return None
+        if len(all_active) == 1:
+            return all_active[0]
+        return f"{len(all_active)} archivos en simultáneo ({', '.join(all_active[:2])}...)"
 
     @property
     def active_file(self) -> Optional[str]:
@@ -728,7 +804,8 @@ class MultiSyncEngine:
                 file_path,
                 conf_path,
                 None,
-                on_selected_progress
+                on_selected_progress,
+                mod_time=f.get("mod_time") if isinstance(f, dict) else None
             )
 
             sync_engine.active_progress.pop(file_id, None)
@@ -866,7 +943,8 @@ class MultiSyncEngine:
                     None
                 )
                 if ok and files_data:
-                    new_c, upd_c = database.map_task_files(
+                    new_c, upd_c = await asyncio.to_thread(
+                        database.map_task_files,
                         t_id, 
                         t_alias, 
                         files_data, 

@@ -4,6 +4,8 @@ os.environ["SYNC_DB_NAME"] = "test_sync_data.db"
 import asyncio
 import sys
 import tempfile
+import threading
+import time
 import unittest
 from unittest import mock
 from pathlib import Path
@@ -801,6 +803,7 @@ class TestDataSyncApp(unittest.TestCase):
             called_cmd = mock_popen.call_args[0][0]
             self.assertIn("copyto", called_cmd)
             self.assertIn("--ftp-no-check-certificate", called_cmd)
+            self.assertIn("--inplace", called_cmd)
             self.assertIn("--retries", called_cmd)
             self.assertIn("5", called_cmd)
             self.assertIn("--timeout", called_cmd)
@@ -1061,7 +1064,7 @@ class TestDataSyncApp(unittest.TestCase):
 
         transferred_files = []
 
-        def mock_execute(task, file_path, conf_path, reg_cb, prog_cb):
+        def mock_execute(task, file_path, conf_path, reg_cb, prog_cb, *args, **kwargs):
             transferred_files.append(file_path)
             if len(transferred_files) == 1:
                 # First attempt for file_1: user pauses!
@@ -1097,6 +1100,419 @@ class TestDataSyncApp(unittest.TestCase):
         self.assertEqual(transferred_files[0], "file_1.dat")
         self.assertEqual(transferred_files[1], "file_1.dat")
         self.assertEqual(transferred_files[2], "file_2.dat")
+
+    def test_extract_date_and_hour(self):
+        """Verify extraction of date and hour from various filename patterns and mod_time."""
+        # 1. Hyphenated pattern
+        d, h = RcloneManager.extract_date_and_hour("DAS_2026-09-30_14-30-00.h5")
+        self.assertEqual(d, "2026-09-30")
+        self.assertEqual(h, "14")
+
+        # 2. Compact pattern
+        d, h = RcloneManager.extract_date_and_hour("strain_20260930_081522.dat")
+        self.assertEqual(d, "2026-09-30")
+        self.assertEqual(h, "08")
+
+        # 3. 14-digit continuous pattern
+        d, h = RcloneManager.extract_date_and_hour("20260930235959_raw_data.tdms")
+        self.assertEqual(d, "2026-09-30")
+        self.assertEqual(h, "23")
+
+        # 4. Filename has date only, hour from mod_time
+        d, h = RcloneManager.extract_date_and_hour("log_2026-09-30.txt", mod_time="2026-09-30T17:45:00Z")
+        self.assertEqual(d, "2026-09-30")
+        self.assertEqual(h, "17")
+
+        # 5. Filename has no timestamp, extracted entirely from mod_time
+        d, h = RcloneManager.extract_date_and_hour("data_channel_flat.bin", mod_time="2026-09-30T04:12:00Z")
+        self.assertEqual(d, "2026-09-30")
+        self.assertEqual(h, "04")
+
+        # 6. Fallback when both are empty / missing returns non-empty valid YYYY-MM-DD and HH
+        d, h = RcloneManager.extract_date_and_hour("random_filename.bin", mod_time=None)
+        self.assertEqual(len(d), 10)
+        self.assertEqual(len(h), 2)
+        self.assertTrue(h.isdigit())
+
+    def test_destination_target_organization(self):
+        """Verify destination target path formatting with and without date/hour organization."""
+        s3_settings = {
+            "dest_type": "s3",
+            "s3_bucket": "das-records",
+            "s3_path": "project/subfolder",
+            "organize_by_date": 1
+        }
+        # Flat filename
+        target = RcloneManager.get_destination_target(
+            s3_settings, 
+            "DAS_2026-09-30_02-15-00.h5"
+        )
+        self.assertEqual(target, "dest_remote:das-records/project/subfolder/2026-09-30/02/DAS_2026-09-30_02-15-00.h5")
+
+        # Nested filename on source
+        target_nested = RcloneManager.get_destination_target(
+            s3_settings,
+            "raw/nested/DAS_2026-09-30_15-00-00.h5"
+        )
+        self.assertEqual(target_nested, "dest_remote:das-records/project/subfolder/2026-09-30/15/DAS_2026-09-30_15-00-00.h5")
+
+        # S3 without subpath (root of bucket)
+        s3_root_settings = {
+            "dest_type": "s3",
+            "s3_bucket": "das-records",
+            "s3_path": "",
+            "organize_by_date": True
+        }
+        target_root = RcloneManager.get_destination_target(
+            s3_root_settings,
+            "DAS_2026-09-30_09-00-00.h5"
+        )
+        self.assertEqual(target_root, "dest_remote:das-records/2026-09-30/09/DAS_2026-09-30_09-00-00.h5")
+
+        # FTP Destination with organization
+        ftp_settings = {
+            "dest_type": "ftp",
+            "ftp_path": "/remote/data",
+            "organize_by_date": "1"
+        }
+        target_ftp = RcloneManager.get_destination_target(
+            ftp_settings,
+            "sensor_20260930_220000.bin"
+        )
+        self.assertEqual(target_ftp, "dest_remote:/remote/data/2026-09-30/22/sensor_20260930_220000.bin")
+
+        # Disabled organization: keeps relative path unchanged
+        disabled_settings = {
+            "dest_type": "s3",
+            "s3_bucket": "das-records",
+            "s3_path": "project/subfolder",
+            "organize_by_date": 0
+        }
+        target_disabled = RcloneManager.get_destination_target(
+            disabled_settings,
+            "raw/nested/DAS_2026-09-30_15-00-00.h5"
+        )
+        self.assertEqual(target_disabled, "dest_remote:das-records/project/subfolder/raw/nested/DAS_2026-09-30_15-00-00.h5")
+
+    def test_task_crud_organize_by_date(self):
+        """Verify organize_by_date field persists in DB and API."""
+        # Create task with organize_by_date = 1
+        create_resp = self.client.post("/api/tasks", json={
+            "name": "DAS Organized Task",
+            "alias": "DASORG",
+            "source_type": "sftp",
+            "source_host": "192.168.1.50",
+            "source_port": "22",
+            "source_user": "nasuser",
+            "source_path": "/nas/das",
+            "dest_type": "s3",
+            "s3_bucket": "das-archive",
+            "s3_path": "organized",
+            "organize_by_date": 1,
+            "auto_start": 0
+        })
+        self.assertEqual(create_resp.status_code, 200)
+        task_id = create_resp.json()["task_id"]
+
+        get_resp = self.client.get(f"/api/tasks/{task_id}")
+        self.assertEqual(get_resp.status_code, 200)
+        self.assertEqual(get_resp.json()["organize_by_date"], 1)
+
+        # Update task with organize_by_date = 0
+        update_resp = self.client.put(f"/api/tasks/{task_id}", json={
+            "name": "DAS Organized Task Updated",
+            "alias": "DASORG",
+            "source_type": "sftp",
+            "source_host": "192.168.1.50",
+            "source_port": "22",
+            "source_user": "nasuser",
+            "source_path": "/nas/das",
+            "dest_type": "s3",
+            "s3_bucket": "das-archive",
+            "s3_path": "flat",
+            "organize_by_date": 0,
+            "auto_start": 0
+        })
+        self.assertEqual(update_resp.status_code, 200)
+
+        get_resp2 = self.client.get(f"/api/tasks/{task_id}")
+        self.assertEqual(get_resp2.status_code, 200)
+        self.assertEqual(get_resp2.json()["organize_by_date"], 0)
+
+    def test_masked_password_recovery_in_scan_preview_and_config(self):
+        """Verify that masked passwords ('********') are properly unmasked from database in scan-preview and config generation."""
+        # 1. Create a task with a real password
+        task_id = database.create_task({
+            "name": "NAS Secret Task",
+            "alias": "NASSEC",
+            "source_type": "sftp",
+            "source_host": "192.168.1.100",
+            "source_port": "22",
+            "source_user": "nasadmin",
+            "source_pass": "SuperSecretPass2026",
+            "source_path": "Desktop/result",
+            "dest_type": "s3",
+            "s3_bucket": "my-bucket",
+            "s3_secret_key": "S3SecretKey999",
+            "auto_start": 0
+        })
+
+        # 2. Simulate GET /api/tasks/{task_id} returning masked password
+        get_resp = self.client.get(f"/api/tasks/{task_id}")
+        self.assertEqual(get_resp.status_code, 200)
+        task_data = get_resp.json()
+        self.assertEqual(task_data["source_pass"], "********")
+        self.assertEqual(task_data["s3_secret_key"], "********")
+
+        # 3. Simulate UI sending masked data back to /api/tasks/scan-preview
+        captured_settings = {}
+        def mock_scan(settings, recursive, max_depth):
+            captured_settings.update(settings)
+            return (True, [{"Path": "test.txt", "Name": "test.txt", "Size": 100, "ModTime": "2026-10-20T10:00:00Z"}], "")
+
+        with unittest.mock.patch("app.rclone_manager.RcloneManager.scan_source_files", side_effect=mock_scan):
+            scan_resp = self.client.post("/api/tasks/scan-preview", json={"settings": task_data})
+            self.assertEqual(scan_resp.status_code, 200)
+            # The recovered password must be the real one, NOT "********"
+            self.assertEqual(captured_settings.get("source_pass"), "SuperSecretPass2026")
+            self.assertEqual(captured_settings.get("s3_secret_key"), "S3SecretKey999")
+
+        # 4. Verify RcloneManager.generate_config_file with masked password
+        with tempfile.NamedTemporaryFile("w+", suffix=".conf", delete=False) as tmp:
+            tmp_conf = Path(tmp.name)
+        try:
+            RcloneManager.generate_config_file(task_data, target_path=tmp_conf)
+            conf_text = tmp_conf.read_text(encoding="utf-8")
+            self.assertIn("pass = ", conf_text)
+            self.assertIn("secret_access_key = S3SecretKey999", conf_text)
+            
+            # Extract obscured pass and reveal it
+            for line in conf_text.splitlines():
+                if line.startswith("pass = "):
+                    obs_val = line.split("=", 1)[1].strip()
+                    revealed = RcloneManager.reveal_password(obs_val)
+                    self.assertEqual(revealed, "SuperSecretPass2026")
+                    self.assertNotEqual(revealed, "********")
+                    break
+        finally:
+            if tmp_conf.exists():
+                tmp_conf.unlink()
+
+    def test_task_max_files_per_cycle(self):
+        """Verify that max_files_per_cycle properly throttles sync cycles and can be configured via API."""
+        # 1. API CRUD test
+        create_resp = self.client.post("/api/tasks", json={
+            "name": "Throttled Task",
+            "alias": "THROTTLE",
+            "source_type": "sftp",
+            "source_host": "nas.local",
+            "source_port": "22",
+            "source_user": "nasuser",
+            "source_path": "/data",
+            "dest_type": "s3",
+            "s3_bucket": "throttle-bucket",
+            "s3_path": "incoming",
+            "s3_access_key": "dummy_key",
+            "s3_secret_key": "dummy_secret",
+            "max_files_per_cycle": 2,
+            "auto_start": 0
+        })
+        self.assertEqual(create_resp.status_code, 200)
+        task_id = create_resp.json()["task_id"]
+
+        get_resp = self.client.get(f"/api/tasks/{task_id}")
+        self.assertEqual(get_resp.status_code, 200)
+        self.assertEqual(get_resp.json()["max_files_per_cycle"], 2)
+
+        # Update to 4
+        update_resp = self.client.put(f"/api/tasks/{task_id}", json={
+            "name": "Throttled Task",
+            "alias": "THROTTLE",
+            "source_type": "sftp",
+            "source_host": "nas.local",
+            "source_port": "22",
+            "source_user": "nasuser",
+            "source_path": "/data",
+            "dest_type": "s3",
+            "s3_bucket": "throttle-bucket",
+            "s3_path": "incoming",
+            "s3_access_key": "dummy_key",
+            "s3_secret_key": "dummy_secret",
+            "max_files_per_cycle": 4,
+            "auto_start": 0
+        })
+        self.assertEqual(update_resp.status_code, 200)
+        self.assertEqual(self.client.get(f"/api/tasks/{task_id}").json()["max_files_per_cycle"], 4)
+
+        # 2. Sync cycle execution test: set limit to 2, add 5 files
+        database.update_task(task_id, {"max_files_per_cycle": 2})
+        files = [
+            {"Path": f"file_{i}.dat", "Name": f"file_{i}.dat", "Size": 100 * i, "ModTime": "2026-10-15T12:00:00Z"}
+            for i in range(1, 6)
+        ]
+        database.map_task_files(task_id, "THROTTLE", files, min_age_seconds=0)
+
+        runner = sync_engine.get_or_create_runner(task_id)
+        runner.state = "running"
+        runner.stop_requested = False
+
+        transferred = []
+        def mock_execute(task, file_path, conf_path, reg_cb, prog_cb, *args, **kwargs):
+            transferred.append(file_path)
+            return (True, "OK")
+
+        async def run_cycle():
+            with unittest.mock.patch("app.sync_engine.RcloneManager.list_source_files", return_value=(True, [], "")), \
+                 unittest.mock.patch("app.sync_engine.RcloneManager.execute_file_transfer", side_effect=mock_execute):
+                await runner.run_sync_cycle()
+
+        asyncio.run(run_cycle())
+
+        # Cycle 1: Exactly 2 files should have been transferred
+        self.assertEqual(len(transferred), 2)
+        pending_files = database.get_pending_task_files(task_id)
+        self.assertEqual(len(pending_files), 3)
+
+        # Cycle 2: Set max_files_per_cycle to 0 (unlimited), all remaining 3 should transfer
+        database.update_task(task_id, {"max_files_per_cycle": 0})
+        transferred.clear()
+        asyncio.run(run_cycle())
+        self.assertEqual(len(transferred), 3)
+        pending_files_remaining = database.get_pending_task_files(task_id)
+        self.assertEqual(len(pending_files_remaining), 0)
+
+    def test_task_stop_during_transfer(self):
+        """Verify that stopping a task terminates active transfers and stops immediately without hanging."""
+        task_id = database.create_task({
+            "name": "Stop Test Task",
+            "alias": "STOPTEST",
+            "source_type": "sftp",
+            "source_host": "nas.local",
+            "source_port": "22",
+            "source_user": "nasuser",
+            "source_path": "/data",
+            "dest_type": "s3",
+            "s3_bucket": "stop-bucket",
+            "s3_access_key": "dummy_key",
+            "s3_secret_key": "dummy_secret",
+            "auto_start": 0
+        })
+        files = [
+            {"Path": f"file_{i}.dat", "Name": f"file_{i}.dat", "Size": 100 * i, "ModTime": "2026-10-15T12:00:00Z"}
+            for i in range(1, 4)
+        ]
+        database.map_task_files(task_id, "STOPTEST", files, min_age_seconds=0)
+
+        runner = sync_engine.get_or_create_runner(task_id)
+        runner.state = "running"
+        runner.stop_requested = False
+
+        def mock_execute(task, file_path, conf_path, reg_cb, prog_cb, *args, **kwargs):
+            # User stops task during transfer
+            runner.stop()
+            return (False, "Process killed")
+
+        async def run_cycle():
+            with unittest.mock.patch("app.sync_engine.RcloneManager.list_source_files", return_value=(True, [], "")), \
+                 unittest.mock.patch("app.sync_engine.RcloneManager.execute_file_transfer", side_effect=mock_execute):
+                return await asyncio.wait_for(runner.run_sync_cycle(), timeout=3.0)
+
+        result = asyncio.run(run_cycle())
+        self.assertEqual(result["status"], "stopped")
+        self.assertEqual(runner.state, "stopped")
+        self.assertFalse(runner.is_syncing)
+
+    def test_concurrent_transfers(self):
+        """Verify that tasks with max_concurrent_transfers > 1 transfer multiple files in parallel."""
+        task_id = database.create_task({
+            "name": "Parallel Test Task",
+            "alias": "PARALLEL",
+            "source_type": "sftp",
+            "source_host": "nas.local",
+            "source_port": "22",
+            "source_user": "nasuser",
+            "source_path": "/data",
+            "dest_type": "s3",
+            "s3_bucket": "parallel-bucket",
+            "s3_access_key": "dummy_key",
+            "s3_secret_key": "dummy_secret",
+            "max_concurrent_transfers": 4,
+            "max_files_per_cycle": 4,
+            "auto_start": 0
+        })
+        files = [
+            {"Path": f"file_{i}.dat", "Name": f"file_{i}.dat", "Size": 100 * i, "ModTime": "2026-10-15T12:00:00Z"}
+            for i in range(1, 5)
+        ]
+        database.map_task_files(task_id, "PARALLEL", files, min_age_seconds=0)
+
+        runner = sync_engine.get_or_create_runner(task_id)
+        runner.state = "running"
+        runner.stop_requested = False
+
+        active_count = 0
+        max_seen_active = 0
+        lock = threading.Lock()
+
+        def mock_execute(task, file_path, conf_path, reg_cb, prog_cb, *args, **kwargs):
+            nonlocal active_count, max_seen_active
+            with lock:
+                active_count += 1
+                if active_count > max_seen_active:
+                    max_seen_active = active_count
+            time.sleep(0.08)
+            with lock:
+                active_count -= 1
+            return (True, "Transfer simulated successfully")
+
+        async def run_cycle():
+            with unittest.mock.patch("app.sync_engine.RcloneManager.list_source_files", return_value=(True, [], "")), \
+                 unittest.mock.patch("app.sync_engine.RcloneManager.execute_file_transfer", side_effect=mock_execute):
+                return await asyncio.wait_for(runner.run_sync_cycle(), timeout=5.0)
+
+        result = asyncio.run(run_cycle())
+        self.assertEqual(result["status"], "completed")
+        self.assertEqual(result["transferred"], 4)
+        # Should have seen multiple files concurrently executing
+        self.assertGreaterEqual(max_seen_active, 2)
+        # All files should now be completed
+        pending = database.get_pending_task_files(task_id)
+        self.assertEqual(len(pending), 0)
+
+    def test_task_crud_with_concurrent_transfers(self):
+        """Verify API persistence and update of max_concurrent_transfers field."""
+        payload = {
+            "name": "CRUD Concurrency Task",
+            "alias": "CRUDCONC",
+            "source_type": "sftp",
+            "source_host": "nas.local",
+            "source_port": "22",
+            "source_user": "nasuser",
+            "source_path": "/data",
+            "dest_type": "s3",
+            "s3_bucket": "crud-conc-bucket",
+            "s3_access_key": "dummy_key",
+            "s3_secret_key": "dummy_secret",
+            "max_concurrent_transfers": 15,
+            "max_files_per_cycle": 50,
+            "auto_start": 0
+        }
+        res = self.client.post("/api/tasks", json=payload)
+        self.assertEqual(res.status_code, 200)
+        task_id = res.json()["task_id"]
+
+        get_res = self.client.get(f"/api/tasks/{task_id}")
+        self.assertEqual(get_res.status_code, 200)
+        self.assertEqual(get_res.json()["max_concurrent_transfers"], 15)
+
+        # Update to 20
+        payload["max_concurrent_transfers"] = 20
+        put_res = self.client.put(f"/api/tasks/{task_id}", json=payload)
+        self.assertEqual(put_res.status_code, 200)
+
+        get_res_updated = self.client.get(f"/api/tasks/{task_id}")
+        self.assertEqual(get_res_updated.status_code, 200)
+        self.assertEqual(get_res_updated.json()["max_concurrent_transfers"], 20)
 
 if __name__ == "__main__":
     unittest.main()

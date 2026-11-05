@@ -60,11 +60,15 @@ class SettingsPayload(BaseModel):
     max_retries: str = "3"
     date_from: Optional[str] = ""
     date_to: Optional[str] = ""
+    organize_by_date: str = "1"
+    max_files_per_cycle: str = "0"
+    max_concurrent_transfers: str = "1"
 
 class TestConnectionPayload(BaseModel):
     settings: Dict[str, Any]
 
 class TaskPayload(BaseModel):
+    id: Optional[int] = None
     name: str
     alias: str
     description: Optional[str] = ""
@@ -94,6 +98,9 @@ class TaskPayload(BaseModel):
     min_file_age: int = 2
     recursive_scan: int = 1
     auto_start: int = 1
+    organize_by_date: int = 1
+    max_files_per_cycle: int = 0
+    max_concurrent_transfers: int = 1
 
 class TransferSelectedPayload(BaseModel):
     file_ids: List[int]
@@ -222,14 +229,25 @@ async def update_task_endpoint(task_id: int, payload: TaskPayload):
         raise HTTPException(status_code=404, detail="Tarea no encontrada.")
     
     data = payload.model_dump()
-    if data.get("source_pass") == "********":
+    data.pop("id", None)
+    if data.get("source_pass") in ("********", "", None):
         del data["source_pass"]
-    if data.get("s3_secret_key") == "********":
+    if data.get("s3_secret_key") in ("********", "", None):
         del data["s3_secret_key"]
-    if data.get("ftp_pass") == "********":
+    if data.get("ftp_pass") in ("********", "", None):
         del data["ftp_pass"]
         
     database.update_task(task_id, data)
+
+    # Regenerate task runner configuration if runner exists
+    runner = sync_engine.runners.get(task_id)
+    updated_task = database.get_task_by_id(task_id)
+    if runner and updated_task:
+        try:
+            RcloneManager.generate_config_file(updated_task, target_path=runner.conf_path)
+        except Exception as e:
+            logger.warning(f"Error regenerando configuración rclone para tarea {task_id}: {e}")
+
     return {"status": "success", "message": "Tarea actualizada correctamente."}
 
 @router.delete("/api/tasks/{task_id}")
@@ -275,6 +293,26 @@ async def scan_preview_task(payload: TestConnectionPayload):
     before or during task configuration, applying optional date filters.
     """
     settings = dict(payload.settings)
+    task_id = settings.get("id")
+    task_alias = settings.get("alias")
+    
+    existing_task = None
+    if task_id:
+        try:
+            existing_task = database.get_task_by_id(int(task_id))
+        except (ValueError, TypeError):
+            pass
+    if not existing_task and task_alias:
+        existing_task = database.get_task_by_alias(str(task_alias))
+        
+    if existing_task:
+        for secret_field in ("source_pass", "s3_secret_key", "ftp_pass"):
+            val = settings.get(secret_field)
+            if not val or val == "********":
+                real_val = existing_task.get(secret_field)
+                if real_val:
+                    settings[secret_field] = real_val
+
     recursive = str(settings.get("recursive_scan", "1")) in ("1", "true", "True", True, 1)
     success, files, err = await asyncio.to_thread(
         RcloneManager.scan_source_files,
@@ -471,9 +509,18 @@ async def test_source_conn(payload: Optional[TestConnectionPayload] = None):
     settings = database.get_all_settings()
     if payload and payload.settings:
         task_id = payload.settings.get("id")
-        existing_task = database.get_task_by_id(int(task_id)) if task_id else None
+        task_alias = payload.settings.get("alias")
+        existing_task = None
+        if task_id:
+            try:
+                existing_task = database.get_task_by_id(int(task_id))
+            except (ValueError, TypeError):
+                pass
+        if not existing_task and task_alias:
+            existing_task = database.get_task_by_alias(str(task_alias))
+
         for k, v in payload.settings.items():
-            if v == "********":
+            if v == "********" or (not v and k in ("source_pass", "s3_secret_key", "ftp_pass")):
                 if existing_task and existing_task.get(k):
                     settings[k] = existing_task[k]
                 elif k in settings:
@@ -489,9 +536,18 @@ async def test_dest_conn(payload: Optional[TestConnectionPayload] = None):
     settings = database.get_all_settings()
     if payload and payload.settings:
         task_id = payload.settings.get("id")
-        existing_task = database.get_task_by_id(int(task_id)) if task_id else None
+        task_alias = payload.settings.get("alias")
+        existing_task = None
+        if task_id:
+            try:
+                existing_task = database.get_task_by_id(int(task_id))
+            except (ValueError, TypeError):
+                pass
+        if not existing_task and task_alias:
+            existing_task = database.get_task_by_alias(str(task_alias))
+
         for k, v in payload.settings.items():
-            if v == "********":
+            if v == "********" or (not v and k in ("source_pass", "s3_secret_key", "ftp_pass")):
                 if existing_task and existing_task.get(k):
                     settings[k] = existing_task[k]
                 elif k in settings:

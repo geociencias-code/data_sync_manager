@@ -1,8 +1,10 @@
 import os
+import re
 import json
 import logging
 import subprocess
 import tempfile
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, Any, List, Tuple, Optional, Callable
 
@@ -69,6 +71,23 @@ class RcloneManager:
             return password
 
     @classmethod
+    def reveal_password(cls, obscured: str) -> str:
+        """De-obscures an obscured password using rclone reveal."""
+        if not obscured:
+            return ""
+        try:
+            res = subprocess.run(
+                [cls.get_rclone_binary(), "reveal", obscured],
+                capture_output=True,
+                text=True,
+                check=True
+            )
+            return res.stdout.strip()
+        except Exception as e:
+            logger.error(f"Error revealing password: {e}")
+            return obscured
+
+    @classmethod
     def generate_config_file(cls, settings: Dict[str, str], target_path: Optional[Path] = None) -> Path:
         """
         Generates rclone.conf dynamically from settings.
@@ -78,6 +97,20 @@ class RcloneManager:
         
         # 1. Source SFTP Section
         sftp_pass = settings.get("source_pass", "")
+        if sftp_pass == "********":
+            try:
+                from app import database
+                t_id = settings.get("id")
+                t_alias = settings.get("alias")
+                rec = database.get_task_by_id(int(t_id)) if t_id else None
+                if not rec and t_alias:
+                    rec = database.get_task_by_alias(str(t_alias))
+                if not rec:
+                    rec = database.get_all_settings()
+                if rec and rec.get("source_pass") and rec.get("source_pass") != "********":
+                    sftp_pass = rec.get("source_pass")
+            except Exception:
+                pass
         obscured_sftp_pass = cls.obscure_password(sftp_pass) if sftp_pass else ""
         
         lines = [
@@ -88,6 +121,8 @@ class RcloneManager:
             f"user = {settings.get('source_user', '').strip()}",
             f"port = {settings.get('source_port', '22').strip() or '22'}",
             "known_hosts_file = none",
+            "connections = 1",
+            "idle_timeout = 60s",
         ]
         
         if obscured_sftp_pass:
@@ -107,6 +142,20 @@ class RcloneManager:
             raw_provider = settings.get("s3_provider", "AWS").strip()
             access_key = settings.get("s3_access_key", "").strip()
             secret_key = settings.get("s3_secret_key", "").strip()
+            if secret_key == "********":
+                try:
+                    from app import database
+                    t_id = settings.get("id")
+                    t_alias = settings.get("alias")
+                    rec = database.get_task_by_id(int(t_id)) if t_id else None
+                    if not rec and t_alias:
+                        rec = database.get_task_by_alias(str(t_alias))
+                    if not rec:
+                        rec = database.get_all_settings()
+                    if rec and rec.get("s3_secret_key") and rec.get("s3_secret_key") != "********":
+                        secret_key = rec.get("s3_secret_key", "").strip()
+                except Exception:
+                    pass
             region = settings.get("s3_region", "us-east-1").strip() or "us-east-1"
             endpoint = settings.get("s3_endpoint", "").strip().rstrip("/")
             
@@ -136,6 +185,20 @@ class RcloneManager:
             ftp_user = settings.get("ftp_user", "").strip()
             ftp_port = settings.get("ftp_port", "21").strip() or "21"
             ftp_pass = settings.get("ftp_pass", "")
+            if ftp_pass == "********":
+                try:
+                    from app import database
+                    t_id = settings.get("id")
+                    t_alias = settings.get("alias")
+                    rec = database.get_task_by_id(int(t_id)) if t_id else None
+                    if not rec and t_alias:
+                        rec = database.get_task_by_alias(str(t_alias))
+                    if not rec:
+                        rec = database.get_all_settings()
+                    if rec and rec.get("ftp_pass") and rec.get("ftp_pass") != "********":
+                        ftp_pass = rec.get("ftp_pass")
+                except Exception:
+                    pass
             
             lines.extend([
                 "[dest_remote]",
@@ -315,8 +378,11 @@ class RcloneManager:
                 cls.get_rclone_binary(), "lsjson",
                 "--config", str(conf_to_use),
                 "--files-only",
-                "--contimeout", "15s",
-                "--timeout", "60s"
+                "--checkers", "1",
+                "--retries", "3",
+                "--low-level-retries", "10",
+                "--contimeout", "20s",
+                "--timeout", "90s"
             ]
             if min_age:
                 cmd.extend(["--min-age", str(min_age)])
@@ -324,12 +390,15 @@ class RcloneManager:
                 cmd.append("-R")
             cmd.append(target)
             
-            proc = subprocess.Popen(
-                cmd,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True
-            )
+            popen_kwargs = {
+                "stdout": subprocess.PIPE,
+                "stderr": subprocess.PIPE,
+                "text": True
+            }
+            if os.name == "posix":
+                popen_kwargs["start_new_session"] = True
+
+            proc = subprocess.Popen(cmd, **popen_kwargs)
             if process_callback:
                 process_callback(proc)
 
@@ -389,8 +458,11 @@ class RcloneManager:
                 cls.get_rclone_binary(), "lsjson",
                 "--config", str(tmp_path),
                 "--files-only",
-                "--contimeout", "10s",
-                "--timeout", "25s"
+                "--checkers", "1",
+                "--retries", "3",
+                "--low-level-retries", "10",
+                "--contimeout", "20s",
+                "--timeout", "60s"
             ]
             if recursive:
                 cmd.append("-R")
@@ -416,11 +488,86 @@ class RcloneManager:
                 tmp_path.unlink()
 
     @classmethod
-    def get_destination_target(cls, settings: Dict[str, str], rel_path: str) -> str:
-        """Computes the full rclone destination target string for a given relative path."""
+    def extract_date_and_hour(cls, file_path: str, mod_time: Optional[str] = None) -> Tuple[str, str]:
+        """
+        Extracts date (YYYY-MM-DD) and 2-digit hour (HH: 00-23) for organizing files.
+        Priority:
+        1. Pattern in file_name or path (e.g. 2026-09-30_14-22-15, 20260930_14, 20260930140000, 2026-09-30/14/)
+        2. File modification time (mod_time) in ISO format
+        3. Current UTC date and hour fallback
+        """
+        clean_path = str(file_path or "").strip()
+
+        # 1. Date with separator followed by hour: YYYY-MM-DD_HH, YYYY-MM-DD/HH, YYYY-MM-DDTHH, YYYY_MM_DD_HH
+        m = re.search(r'(20\d{2})[-_](0[1-9]|1[0-2])[-_](0[1-9]|[12]\d|3[01])[-_T/\s]([01]\d|2[0-3])', clean_path)
+        if m:
+            y, mo, d, h = m.groups()
+            return f"{y}-{mo}-{d}", h
+
+        # 2. Compact YYYYMMDD with separator followed by hour: YYYYMMDD_HH, YYYYMMDD-HH, YYYYMMDD/HH
+        m = re.search(r'(20\d{2})(0[1-9]|1[0-2])(0[1-9]|[12]\d|3[01])[-_T/\s]([01]\d|2[0-3])', clean_path)
+        if m:
+            y, mo, d, h = m.groups()
+            return f"{y}-{mo}-{d}", h
+
+        # 3. Continuous YYYYMMDDHH... (at least 10 digits starting with 20xx)
+        m = re.search(r'(20\d{2})(0[1-9]|1[0-2])(0[1-9]|[12]\d|3[01])([01]\d|2[0-3])', clean_path)
+        if m:
+            y, mo, d, h = m.groups()
+            return f"{y}-{mo}-{d}", h
+
+        # 4. Date only in file_path (e.g. 2026-09-30 or 20260930)
+        m_date = re.search(r'(20\d{2})[-_](0[1-9]|1[0-2])[-_](0[1-9]|[12]\d|3[01])', clean_path)
+        if not m_date:
+            m_date = re.search(r'(20\d{2})(0[1-9]|1[0-2])(0[1-9]|[12]\d|3[01])', clean_path)
+
+        hour_from_mod = None
+        if mod_time:
+            m_h = re.search(r'[T\s]([01]\d|2[0-3]):', str(mod_time))
+            if m_h:
+                hour_from_mod = m_h.group(1)
+
+        if m_date:
+            y, mo, d = m_date.groups()
+            return f"{y}-{mo}-{d}", hour_from_mod or "00"
+
+        # 5. Full date & hour from mod_time (ISO format like 2026-09-30T14:22:15Z)
+        if mod_time:
+            m_dt = re.search(r'(20\d{2})-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])[T\s]([01]\d|2[0-3]):', str(mod_time))
+            if m_dt:
+                y, mo, d, h = m_dt.groups()
+                return f"{y}-{mo}-{d}", h
+
+        # 6. Fallback to current UTC datetime
+        now = datetime.now(timezone.utc)
+        return now.strftime("%Y-%m-%d"), now.strftime("%H")
+
+    @classmethod
+    def get_destination_target(
+        cls, 
+        settings: Dict[str, Any], 
+        rel_path: str, 
+        mod_time: Optional[str] = None
+    ) -> str:
+        """
+        Computes the full rclone destination target string for a given relative path.
+        If organize_by_date is True/1, partitions files into YYYY-MM-DD/HH/<filename>.
+        """
         dest_type = settings.get("dest_type", "s3").lower()
         clean_rel = rel_path.lstrip("/")
+        base_name = Path(clean_rel).name
         
+        organize = False
+        val = settings.get("organize_by_date")
+        if val is not None:
+            organize = str(val).lower() in ("1", "true", "yes", "on")
+
+        if organize:
+            date_dir, hour_dir = cls.extract_date_and_hour(clean_rel, mod_time)
+            dest_subpath = f"{date_dir}/{hour_dir}/{base_name}"
+        else:
+            dest_subpath = clean_rel
+
         if dest_type == "s3":
             bucket = settings.get("s3_bucket", "").strip().strip("/")
             s3_path = settings.get("s3_path", "").strip().strip("/")
@@ -428,7 +575,7 @@ class RcloneManager:
             parts = [bucket] if bucket else []
             if s3_path:
                 parts.append(s3_path)
-            parts.append(clean_rel)
+            parts.append(dest_subpath)
             
             full_dst = "/".join(parts)
             return f"dest_remote:{full_dst}"
@@ -437,7 +584,7 @@ class RcloneManager:
             is_abs = raw_path.startswith("/")
             ftp_path = raw_path.strip("/")
             parts = [ftp_path] if ftp_path else []
-            parts.append(clean_rel)
+            parts.append(dest_subpath)
             full_dst = "/".join(parts)
             return f"dest_remote:/{full_dst}" if is_abs else f"dest_remote:{full_dst}"
 
@@ -457,19 +604,29 @@ class RcloneManager:
     @classmethod
     def execute_file_transfer(
         cls, 
-        settings: Dict[str, str], 
+        settings: Dict[str, Any], 
         file_path: str,
         config_path: Optional[Path] = None,
         process_callback: Optional[Any] = None,
-        progress_callback: Optional[Any] = None
+        progress_callback: Optional[Any] = None,
+        mod_time: Optional[str] = None
     ) -> Tuple[bool, str]:
         """
         Transfers a single file from SFTP to Destination using rclone copyto.
         Emits live progress percentage and transfer metrics via progress_callback.
         Returns (success, error_or_success_message).
         """
+        if not mod_time:
+            try:
+                from app import database
+                f_info = database.get_file_by_path(file_path, task_id=settings.get("id"))
+                if f_info:
+                    mod_time = f_info.get("mod_time")
+            except Exception:
+                pass
+
         src_target = cls.get_source_target(settings, file_path)
-        dst_target = cls.get_destination_target(settings, file_path)
+        dst_target = cls.get_destination_target(settings, file_path, mod_time=mod_time)
         conf_to_use = config_path or RCLONE_CONF_PATH
         
         dest_type = settings.get("dest_type", "s3").lower()
@@ -478,6 +635,8 @@ class RcloneManager:
             cls.get_rclone_binary(), "copyto",
             "--config", str(conf_to_use),
             "--retries", "5",
+            "--retries-sleep", "1s",
+            "--low-level-retries", "10",
             "--contimeout", "20s",
             "--timeout", "10m",
             "--ignore-existing",
@@ -497,18 +656,23 @@ class RcloneManager:
         elif dest_type == "ftp":
             cmd.extend([
                 "--ftp-no-check-certificate",
+                # Disables .partial temporary file rename which causes '502 Command not implemented' on restrictive FTP servers
+                "--inplace",
             ])
 
         cmd.extend([src_target, dst_target])
         
         proc = None
         try:
-            proc = subprocess.Popen(
-                cmd,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.PIPE,
-                text=True
-            )
+            popen_kwargs = {
+                "stdout": subprocess.DEVNULL,
+                "stderr": subprocess.PIPE,
+                "text": True
+            }
+            if os.name == "posix":
+                popen_kwargs["start_new_session"] = True
+
+            proc = subprocess.Popen(cmd, **popen_kwargs)
             
             # Register process with caller (for cancellation/stop support)
             if process_callback:
@@ -558,12 +722,25 @@ class RcloneManager:
                                     "speed": speed,
                                     "eta": eta
                                 })
-                        elif msg_data.get("level") == "error":
-                            err_lines.append(msg_data.get("msg", line_str))
+                        else:
+                            level = str(msg_data.get("level", "")).lower()
+                            msg = msg_data.get("msg", "")
+                            if level in ("error", "critical", "fatal", "notice"):
+                                err_lines.append(msg or line_str)
+                            elif msg and any(kw in msg.lower() for kw in ("error", "fail", "timeout", "reset", "refused", "denied")):
+                                err_lines.append(msg)
                     except Exception:
                         err_lines.append(line_str)
 
-            proc.wait(timeout=15)
+            try:
+                proc.wait(timeout=3)
+            except subprocess.TimeoutExpired:
+                if proc:
+                    try:
+                        proc.kill()
+                    except Exception:
+                        pass
+                proc.wait(timeout=1)
             
             if proc.returncode == 0:
                 if progress_callback:
@@ -576,7 +753,8 @@ class RcloneManager:
                     })
                 return True, "Transferencia completada exitosamente."
             else:
-                err_msg = "\n".join(err_lines[-3:]) or f"Código de error {proc.returncode}"
+                filtered_errs = [e for e in err_lines if not any(ign in e.lower() for ign in ("starting with parameters", "using config file", "go routines active"))]
+                err_msg = "\n".join(filtered_errs[-3:]) if filtered_errs else f"Código de error {proc.returncode}"
                 return False, f"Fallo al transferir: {err_msg}"
         except subprocess.TimeoutExpired:
             if proc:

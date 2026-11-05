@@ -737,32 +737,56 @@
                     </div>
 
                     <!-- Sync Execution Settings -->
-                    <div class="grid grid-cols-1 sm:grid-cols-4 gap-3 bg-slate-950/40 p-3 rounded-xl border border-slate-800">
-                        <div>
-                            <label class="block text-[11px] text-slate-400 mb-1">Intervalo</label>
-                            <div class="flex items-center gap-1.5">
-                                <input type="number" id="task-sync-interval" value="60" min="5" class="w-20 bg-slate-900 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs text-white font-mono focus:outline-none focus:border-indigo-500">
-                                <span class="text-xs text-slate-400">seg</span>
+                    <div class="space-y-3 bg-slate-950/40 p-3 rounded-xl border border-slate-800">
+                        <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+                            <div>
+                                <label class="block text-[11px] text-slate-400 mb-1">Intervalo</label>
+                                <div class="flex items-center gap-1.5">
+                                    <input type="number" id="task-sync-interval" value="60" min="5" class="w-20 bg-slate-900 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs text-white font-mono focus:outline-none focus:border-indigo-500">
+                                    <span class="text-xs text-slate-400">seg</span>
+                                </div>
+                            </div>
+                            <div>
+                                <label class="block text-[11px] text-slate-400 mb-1" title="Solo sincroniza archivos con antigüedad mayor a este tiempo para evitar leer mientras el interrogador aún los escribe">Antigüedad</label>
+                                <div class="flex items-center gap-1.5">
+                                    <input type="number" id="task-min-file-age" value="2" min="0" class="w-20 bg-slate-900 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs text-white font-mono focus:outline-none focus:border-indigo-500">
+                                    <span class="text-xs text-slate-400">min</span>
+                                </div>
+                            </div>
+                            <div>
+                                <label class="block text-[11px] text-slate-400 mb-1" title="Cantidad de archivos que se transfieren simultáneamente en paralelo (1 a 50)">Simultáneos</label>
+                                <div class="flex items-center gap-1.5">
+                                    <input type="number" id="task-max-concurrent-transfers" value="1" min="1" max="50" class="w-20 bg-slate-900 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs text-white font-mono focus:outline-none focus:border-indigo-500">
+                                    <span class="text-[10px] text-slate-400">1-50</span>
+                                </div>
+                            </div>
+                            <div>
+                                <label class="block text-[11px] text-slate-400 mb-1" title="Cantidad máxima de archivos a transferir en cada ciclo. 0 = sin límite (envía todos los pendientes)">Por Ciclo</label>
+                                <div class="flex items-center gap-1.5">
+                                    <input type="number" id="task-max-files-per-cycle" value="0" min="0" class="w-20 bg-slate-900 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs text-white font-mono focus:outline-none focus:border-indigo-500">
+                                    <span class="text-[10px] text-slate-400">0=todos</span>
+                                </div>
+                            </div>
+                            <div class="flex items-center pt-2 sm:pt-4">
+                                <label class="flex items-center space-x-2 text-xs text-slate-300 cursor-pointer">
+                                    <input type="checkbox" id="task-auto-start" checked class="rounded bg-slate-900 border-slate-700 text-indigo-600 focus:ring-0">
+                                    <span>Auto-iniciar</span>
+                                </label>
+                            </div>
+                            <div class="flex items-center pt-2 sm:pt-4">
+                                <label class="flex items-center space-x-2 text-xs text-slate-300 cursor-pointer">
+                                    <input type="checkbox" id="task-recursive-scan" checked class="rounded bg-slate-900 border-slate-700 text-indigo-600 focus:ring-0">
+                                    <span>Recursivo</span>
+                                </label>
                             </div>
                         </div>
-                        <div>
-                            <label class="block text-[11px] text-slate-400 mb-1" title="Solo sincroniza archivos con antigüedad mayor a este tiempo para evitar leer mientras el interrogador aún los escribe">Antigüedad Mínima</label>
-                            <div class="flex items-center gap-1.5">
-                                <input type="number" id="task-min-file-age" value="2" min="0" class="w-20 bg-slate-900 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs text-white font-mono focus:outline-none focus:border-indigo-500">
-                                <span class="text-xs text-slate-400">min</span>
-                            </div>
-                        </div>
-                        <div class="flex items-center pt-2 sm:pt-4">
-                            <label class="flex items-center space-x-2 text-xs text-slate-300 cursor-pointer">
-                                <input type="checkbox" id="task-auto-start" checked class="rounded bg-slate-900 border-slate-700 text-indigo-600 focus:ring-0">
-                                <span>Auto-iniciar</span>
+
+                        <div class="pt-2 border-t border-slate-800/80">
+                            <label class="flex items-center space-x-2 text-xs text-slate-300 cursor-pointer" title="Organiza los archivos en el destino por Fecha (YYYY-MM-DD) y Hora (00, 01, ..., 23)">
+                                <input type="checkbox" id="task-organize-by-date" checked class="rounded bg-slate-900 border-slate-700 text-indigo-600 focus:ring-0">
+                                <span class="font-medium text-indigo-300">Organizar en destino por Fecha y Hora (<span class="font-mono text-[11px] text-slate-400">YYYY-MM-DD/HH/archivo</span>)</span>
                             </label>
-                        </div>
-                        <div class="flex items-center pt-2 sm:pt-4">
-                            <label class="flex items-center space-x-2 text-xs text-slate-300 cursor-pointer">
-                                <input type="checkbox" id="task-recursive-scan" checked class="rounded bg-slate-900 border-slate-700 text-indigo-600 focus:ring-0">
-                                <span>Recursivo</span>
-                            </label>
+                            <p class="text-[10px] text-slate-500 mt-0.5 ml-6">Crea carpetas por día y hora en S3/destino basadas en la fecha del archivo o su modificación.</p>
                         </div>
                     </div>
 
@@ -1057,6 +1081,37 @@
             `;
         }
 
+        function refreshTransferBanner() {
+            const activeIds = Object.keys(activeFileProgress);
+            const activeCount = activeIds.length;
+            if (activeCount === 0) return;
+
+            if (activeCount === 1) {
+                const item = activeFileProgress[activeIds[0]];
+                showTransferBanner(item.file_path, item.percentage, item.metaStr);
+            } else {
+                let sumPct = 0;
+                let sumSpeed = 0;
+                let validCount = 0;
+                let lastPath = '';
+                for (const id of activeIds) {
+                    const item = activeFileProgress[id];
+                    if (item) {
+                        sumPct += (item.percentage || 0);
+                        if (item.speedRaw) sumSpeed += item.speedRaw;
+                        validCount++;
+                        if (item.file_path) lastPath = item.file_path;
+                    }
+                }
+                const avgPct = validCount > 0 ? (sumPct / validCount) : 0;
+                const speedStr = formatSpeed(sumSpeed);
+                const metaStr = speedStr ? `${activeCount} hilos activos • ${speedStr}` : `${activeCount} transferencias simultáneas`;
+                const fileNameOnly = lastPath ? (lastPath.split('/').pop() || lastPath) : '';
+                const titleStr = `${activeCount} archivos enviándose en simultáneo (${fileNameOnly} y ${activeCount - 1} más)`;
+                showTransferBanner(titleStr, avgPct, metaStr);
+            }
+        }
+
         function updateFileLiveProgress(data) {
             if (!data || !data.file_id) return;
             const fileId = data.file_id;
@@ -1068,6 +1123,7 @@
             activeFileProgress[fileId] = {
                 percentage: pct,
                 speed: speed,
+                speedRaw: parseFloat(data.speed || 0),
                 eta: eta,
                 metaStr: metaStr,
                 file_path: data.file_path,
@@ -1090,9 +1146,7 @@
             }
 
             // 2. Actualizar Banner superior de transferencia activa
-            if (data.file_path) {
-                showTransferBanner(data.file_path, pct, metaStr);
-            }
+            refreshTransferBanner();
         }
 
         function handleWebSocketEvent(msg) {
@@ -1106,16 +1160,23 @@
             } else if (type === 'file_progress') {
                 updateFileLiveProgress(data);
             } else if (type === 'file_transferring') {
-                if (data && data.file_path) {
-                    showTransferBanner(data.file_path, 0.0, 'Iniciando...');
-                }
                 if (data && data.file_id) {
+                    activeFileProgress[data.file_id] = {
+                        percentage: 0.0,
+                        speed: '',
+                        speedRaw: 0,
+                        eta: '',
+                        metaStr: 'Iniciando...',
+                        file_path: data.file_path || '',
+                        alias: data.alias || ''
+                    };
                     const cell = document.getElementById(`file-status-${data.file_id}`);
                     if (cell) {
                         cell.dataset.status = "transferring";
                         cell.innerHTML = renderTransferProgressBar(0.0);
                     }
                 }
+                refreshTransferBanner();
             } else if (type === 'file_completed') {
                 if (data && data.file_id) {
                     delete activeFileProgress[data.file_id];
@@ -1127,6 +1188,8 @@
                 }
                 if (Object.keys(activeFileProgress).length === 0) {
                     scheduleHideTransferBanner(2000);
+                } else {
+                    refreshTransferBanner();
                 }
             } else if (type === 'file_error') {
                 if (data && data.file_id) {
@@ -1139,6 +1202,8 @@
                 }
                 if (Object.keys(activeFileProgress).length === 0) {
                     scheduleHideTransferBanner(2000);
+                } else {
+                    refreshTransferBanner();
                 }
             } else if (type === 'files_changed') {
                 // Debounce general files reload only when new files are discovered in SQLite
@@ -1212,7 +1277,7 @@
             if (tabId === 'files') {
                 loadFiles(currentPage, true);
             } else if (tabId === 'tasks') {
-                loadTasks();
+                loadTasks(true);
             } else if (tabId === 'logs') {
                 loadLogs();
                 loadHistory();
@@ -1376,7 +1441,9 @@
             if (statPending) statPending.innerText = data.pending ?? 0;
 
             // Update Active Transfer Banner (Smoothly stabilized)
-            if (data.is_syncing && data.current_file) {
+            if (Object.keys(activeFileProgress).length > 0) {
+                refreshTransferBanner();
+            } else if (data.is_syncing && data.current_file) {
                 const initPct = (data.current_file_progress !== undefined && data.current_file_progress !== null) ? data.current_file_progress : null;
                 showTransferBanner(data.current_file, initPct);
             } else if (data.is_syncing) {
@@ -1634,8 +1701,11 @@
             const search = document.getElementById('files-search').value.trim();
 
             const tbody = document.getElementById('files-table-body');
-            if (!silent) {
+            const hasExistingRows = tbody && tbody.querySelector('tr[data-row-id]') !== null;
+            if (!silent && !hasExistingRows) {
                 tbody.innerHTML = `<tr><td colspan="9" class="px-4 py-8 text-center text-slate-500">Consultando archivos en SQLite...</td></tr>`;
+            } else if (!silent && hasExistingRows) {
+                tbody.style.opacity = '0.6';
             }
 
             try {
@@ -1647,6 +1717,7 @@
                 const res = await fetch(url);
                 if (!res.ok) throw new Error("Error cargando archivos");
                 const data = await res.json();
+                if (tbody) tbody.style.opacity = '1';
 
                 totalPages = data.total_pages || 1;
                 document.getElementById('pagination-info').innerText = `Mostrando ${data.items.length} de ${data.total} archivos`;
@@ -1751,8 +1822,9 @@
                     `;
                 }).join('');
 
-                lucide.createIcons();
+                lucide.createIcons({ root: tbody });
             } catch (err) {
+                if (tbody) tbody.style.opacity = '1';
                 tbody.innerHTML = `<tr><td colspan="9" class="px-4 py-8 text-center text-rose-400">Error: ${err.message}</td></tr>`;
             }
         }
@@ -1790,8 +1862,11 @@
             document.getElementById('task-source-port').value = '22';
             document.getElementById('task-sync-interval').value = '60';
             document.getElementById('task-min-file-age').value = '2';
+            document.getElementById('task-max-concurrent-transfers').value = '1';
+            document.getElementById('task-max-files-per-cycle').value = '0';
             document.getElementById('task-auto-start').checked = true;
             document.getElementById('task-recursive-scan').checked = true;
+            document.getElementById('task-organize-by-date').checked = true;
             document.getElementById('task-date-from').value = '';
             document.getElementById('task-date-to').value = '';
             setTaskDestType('s3');
@@ -1837,11 +1912,14 @@
                 document.getElementById('task-ftp-pass').value = t.ftp_pass || '';
                 document.getElementById('task-ftp-path').value = t.ftp_path || '';
 
-                // Interval & Age
+                // Interval & Age & Batch & Concurrency
                 document.getElementById('task-sync-interval').value = t.sync_interval || 60;
                 document.getElementById('task-min-file-age').value = t.min_file_age !== undefined ? t.min_file_age : 2;
+                document.getElementById('task-max-concurrent-transfers').value = t.max_concurrent_transfers !== undefined ? t.max_concurrent_transfers : (t.max_files_per_cycle > 1 ? Math.min(t.max_files_per_cycle, 50) : 1);
+                document.getElementById('task-max-files-per-cycle').value = t.max_files_per_cycle !== undefined ? t.max_files_per_cycle : 0;
                 document.getElementById('task-auto-start').checked = (t.auto_start === 1 || t.auto_start === '1');
                 document.getElementById('task-recursive-scan').checked = (t.recursive_scan === 1 || t.recursive_scan === '1');
+                document.getElementById('task-organize-by-date').checked = (t.organize_by_date === undefined || t.organize_by_date === 1 || t.organize_by_date === '1');
 
                 // Date range filters
                 let dFrom = t.date_from || '';
@@ -1867,7 +1945,9 @@
         }
 
         function getTaskFormData() {
+            const rawId = document.getElementById('task-id').value;
             return {
+                id: rawId ? parseInt(rawId, 10) : null,
                 alias: document.getElementById('task-alias').value.trim().toUpperCase(),
                 name: document.getElementById('task-name').value.trim(),
                 source_type: 'sftp',
@@ -1894,8 +1974,11 @@
                 date_to: document.getElementById('task-date-to').value.trim(),
                 sync_interval: parseInt(document.getElementById('task-sync-interval').value.trim(), 10) || 60,
                 min_file_age: parseInt(document.getElementById('task-min-file-age').value.trim(), 10) || 2,
+                max_concurrent_transfers: parseInt(document.getElementById('task-max-concurrent-transfers') ? document.getElementById('task-max-concurrent-transfers').value.trim() : 1, 10) || 1,
+                max_files_per_cycle: parseInt(document.getElementById('task-max-files-per-cycle') ? document.getElementById('task-max-files-per-cycle').value.trim() : 0, 10) || 0,
                 auto_start: document.getElementById('task-auto-start').checked ? 1 : 0,
-                recursive_scan: document.getElementById('task-recursive-scan').checked ? 1 : 0
+                recursive_scan: document.getElementById('task-recursive-scan').checked ? 1 : 0,
+                organize_by_date: document.getElementById('task-organize-by-date') ? (document.getElementById('task-organize-by-date').checked ? 1 : 0) : 1
             };
         }
 
@@ -1955,7 +2038,13 @@
             }
         }
 
+        const taskControlPending = new Set();
+
         async function controlTaskById(taskId, action) {
+            const key = `${taskId}-${action}`;
+            if (taskControlPending.has(key)) return;
+            taskControlPending.add(key);
+
             try {
                 if (action === 'stop' || action === 'pause') {
                     hideTransferBanner();
@@ -1975,20 +2064,25 @@
                 }
             } catch (err) {
                 showToast(`Error de red: ${err.message}`, "error");
+            } finally {
+                taskControlPending.delete(key);
             }
         }
 
         async function loadTasks(silent = false) {
             const container = document.getElementById('tasks-container');
             if (!container) return;
-            if (!silent) {
+            const hasExistingCards = container.querySelector('.bg-slate-900\\/70') !== null;
+            if (!silent && !hasExistingCards) {
                 container.innerHTML = `
                     <div class="col-span-full py-12 text-center text-slate-500 font-mono text-xs">
                         <i data-lucide="loader" class="w-6 h-6 animate-spin mx-auto mb-2 text-indigo-400"></i>
                         Cargando tareas activas...
                     </div>
                 `;
-                lucide.createIcons();
+                lucide.createIcons({ root: container });
+            } else if (hasExistingCards) {
+                container.style.opacity = '0.75';
             }
 
             try {
@@ -2012,7 +2106,7 @@
                             </div>
                         </div>
                     `;
-                    lucide.createIcons();
+                    lucide.createIcons({ root: container });
                     return;
                 }
 
@@ -2106,7 +2200,7 @@
                                 </div>
 
                                 <!-- Details Grid -->
-                                <div class="grid grid-cols-3 gap-2 mt-3 text-[11px]">
+                                <div class="grid grid-cols-2 sm:grid-cols-5 gap-2 mt-3 text-[11px]">
                                     <div class="bg-slate-950/60 p-2.5 rounded-lg border border-slate-800/60">
                                         <span class="text-slate-500 block text-[10px] uppercase font-semibold">Destino</span>
                                         <span class="font-mono text-slate-200 truncate block mt-0.5" title="${destDesc}">${destDesc}</span>
@@ -2118,6 +2212,14 @@
                                     <div class="bg-slate-950/60 p-2.5 rounded-lg border border-slate-800/60">
                                         <span class="text-slate-500 block text-[10px] uppercase font-semibold" title="Solo se registran y sincronizan archivos con más de este tiempo de antigüedad">Antigüedad</span>
                                         <span class="font-mono text-slate-200 block mt-0.5">&gt;${t.min_file_age !== undefined ? t.min_file_age : 2} min</span>
+                                    </div>
+                                    <div class="bg-slate-950/60 p-2.5 rounded-lg border border-slate-800/60">
+                                        <span class="text-slate-500 block text-[10px] uppercase font-semibold" title="Límite de archivos a enviar por cada ciclo de sincronización (0 = sin límite)">Por Ciclo</span>
+                                        <span class="font-mono text-indigo-300 block mt-0.5">${(t.max_files_per_cycle && t.max_files_per_cycle > 0) ? t.max_files_per_cycle + ' arch.' : 'Sin límite'}</span>
+                                    </div>
+                                    <div class="bg-slate-950/60 p-2.5 rounded-lg border border-slate-800/60">
+                                        <span class="text-slate-500 block text-[10px] uppercase font-semibold" title="Archivos enviándose de forma simultánea en paralelo (1 a 50)">Simultáneos</span>
+                                        <span class="font-mono text-emerald-400 font-bold block mt-0.5">${t.max_concurrent_transfers || 1} arch.</span>
                                     </div>
                                 </div>
 
@@ -2152,13 +2254,15 @@
                     `;
                 }).join('');
 
-                lucide.createIcons();
+                lucide.createIcons({ root: container });
             } catch (err) {
                 container.innerHTML = `
                     <div class="col-span-full py-8 text-center text-rose-400 font-mono text-xs">
                         Error al cargar tareas: ${err.message}
                     </div>
                 `;
+            } finally {
+                container.style.opacity = '1';
             }
         }
 

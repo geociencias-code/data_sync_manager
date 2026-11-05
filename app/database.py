@@ -76,6 +76,37 @@ def init_db():
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_files_alias ON files(task_alias);")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_files_task_id ON files(task_id);")
 
+        # Performance indexes for massive file sets (25k+ files)
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_files_status_size ON files(status, file_size);")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_files_task_status_size ON files(task_id, status, file_size);")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_files_alias_status_size ON files(task_alias, status, file_size);")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_files_status_id_desc ON files(status, id DESC);")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_files_task_status_id ON files(task_id, status, id DESC);")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_files_task_filepath ON files(task_id, file_path);")
+        cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_files_status_priority_id ON files(
+                (CASE status 
+                    WHEN 'transferring' THEN 1 
+                    WHEN 'error' THEN 2 
+                    WHEN 'pending' THEN 3 
+                    ELSE 4 
+                END), 
+                id DESC
+            );
+        """)
+        cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_files_alias_status_prio ON files(
+                task_alias, 
+                (CASE status 
+                    WHEN 'transferring' THEN 1 
+                    WHEN 'error' THEN 2 
+                    WHEN 'pending' THEN 3 
+                    ELSE 4 
+                END), 
+                id DESC
+            );
+        """)
+
         # 2.1 Multi-Task sync_tasks table
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS sync_tasks (
@@ -105,6 +136,9 @@ def init_db():
                 ftp_path TEXT DEFAULT '',
                 date_from TEXT DEFAULT '',
                 date_to TEXT DEFAULT '',
+                organize_by_date INTEGER NOT NULL DEFAULT 1, -- Organizar archivos en subcarpetas YYYY-MM-DD/HH
+                max_files_per_cycle INTEGER NOT NULL DEFAULT 0, -- Límite de archivos por ciclo (0 = todos)
+                max_concurrent_transfers INTEGER NOT NULL DEFAULT 1, -- Transferencias simultáneas en paralelo (1-20)
                 sync_interval INTEGER NOT NULL DEFAULT 60,
                 min_file_age INTEGER NOT NULL DEFAULT 2,   -- minutos mínimos de antigüedad antes de sincronizar
                 recursive_scan INTEGER NOT NULL DEFAULT 1,
@@ -129,6 +163,12 @@ def init_db():
             cursor.execute("ALTER TABLE sync_tasks ADD COLUMN date_from TEXT DEFAULT ''")
         if "date_to" not in sync_task_cols:
             cursor.execute("ALTER TABLE sync_tasks ADD COLUMN date_to TEXT DEFAULT ''")
+        if "organize_by_date" not in sync_task_cols:
+            cursor.execute("ALTER TABLE sync_tasks ADD COLUMN organize_by_date INTEGER NOT NULL DEFAULT 1")
+        if "max_files_per_cycle" not in sync_task_cols:
+            cursor.execute("ALTER TABLE sync_tasks ADD COLUMN max_files_per_cycle INTEGER NOT NULL DEFAULT 0")
+        if "max_concurrent_transfers" not in sync_task_cols:
+            cursor.execute("ALTER TABLE sync_tasks ADD COLUMN max_concurrent_transfers INTEGER NOT NULL DEFAULT 1")
 
         # 3. Task state & Scheduler control table (holds singleton record id=1)
         cursor.execute("""
@@ -201,6 +241,8 @@ def init_db():
             "sync_interval": "60", # seconds
             "auto_start": "1", # 1 = true, 0 = false
             "recursive_scan": "1",
+            "organize_by_date": "1", # Partition files into YYYY-MM-DD/HH
+            "max_files_per_cycle": "0", # Max files per cycle (0 = all)
             "delete_source_after": "0",
             "max_retries": "3"
         }
@@ -237,27 +279,32 @@ def get_all_tasks() -> List[Dict[str, Any]]:
         cursor.execute("SELECT * FROM sync_tasks ORDER BY id ASC")
         tasks = [dict(row) for row in cursor.fetchall()]
         
+        # Fast single covering-index query for all tasks
+        cursor.execute("""
+            SELECT 
+                task_id,
+                COUNT(*) as total,
+                SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) as completed,
+                SUM(CASE WHEN status = 'transferring' THEN 1 ELSE 0 END) as transferring,
+                SUM(CASE WHEN status = 'error' THEN 1 ELSE 0 END) as error,
+                SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) as pending,
+                SUM(file_size) as total_size,
+                SUM(CASE WHEN status = 'completed' THEN file_size ELSE 0 END) as completed_size
+            FROM files 
+            WHERE task_id IS NOT NULL
+            GROUP BY task_id
+        """)
+        stats_map = {row["task_id"]: dict(row) for row in cursor.fetchall()}
+        
         for t in tasks:
-            t_id = t["id"]
-            cursor.execute("""
-                SELECT 
-                    COUNT(*) as total,
-                    SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) as completed,
-                    SUM(CASE WHEN status = 'transferring' THEN 1 ELSE 0 END) as transferring,
-                    SUM(CASE WHEN status = 'error' THEN 1 ELSE 0 END) as error,
-                    SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) as pending,
-                    SUM(file_size) as total_size,
-                    SUM(CASE WHEN status = 'completed' THEN file_size ELSE 0 END) as completed_size
-                FROM files WHERE task_id = ?
-            """, (t_id,))
-            s = cursor.fetchone()
-            t["total_files"] = s["total"] or 0
-            t["completed_files"] = s["completed"] or 0
-            t["transferring_files"] = s["transferring"] or 0
-            t["error_files"] = s["error"] or 0
-            t["pending_files"] = s["pending"] or 0
-            t["total_size"] = s["total_size"] or 0
-            t["completed_size"] = s["completed_size"] or 0
+            s = stats_map.get(t["id"], {})
+            t["total_files"] = s.get("total", 0)
+            t["completed_files"] = s.get("completed", 0)
+            t["transferring_files"] = s.get("transferring", 0)
+            t["error_files"] = s.get("error", 0)
+            t["pending_files"] = s.get("pending", 0)
+            t["total_size"] = s.get("total_size", 0)
+            t["completed_size"] = s.get("completed_size", 0)
             
         return tasks
 
@@ -354,9 +401,9 @@ def create_task(data: Dict[str, Any]) -> int:
                 source_type, source_host, source_port, source_user, source_pass, source_key_file, source_path,
                 dest_type, s3_provider, s3_bucket, s3_access_key, s3_secret_key, s3_region, s3_endpoint, s3_path,
                 ftp_host, ftp_port, ftp_user, ftp_pass, ftp_path,
-                date_from, date_to,
+                date_from, date_to, organize_by_date, max_files_per_cycle, max_concurrent_transfers,
                 sync_interval, min_file_age, recursive_scan, auto_start, state
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             str(data.get("name", "") or "").strip() or f"Tarea {alias}",
             alias,
@@ -383,6 +430,9 @@ def create_task(data: Dict[str, Any]) -> int:
             str(data.get("ftp_path", "") or "").strip(),
             str(data.get("date_from", "") or "").strip(),
             str(data.get("date_to", "") or "").strip(),
+            1 if str(data.get("organize_by_date", "1")) in ("1", "true", "True") else 0,
+            int(data.get("max_files_per_cycle", 0) or 0),
+            int(data.get("max_concurrent_transfers", 1) or 1),
             int(data.get("sync_interval", 60) or 60),
             int(data.get("min_file_age", 2) or 2),
             1 if str(data.get("recursive_scan", "1")) in ("1", "true", "True") else 0,
@@ -400,7 +450,7 @@ def update_task(task_id: int, data: Dict[str, Any]) -> bool:
             "source_key_file", "source_path",
             "dest_type", "s3_provider", "s3_bucket", "s3_access_key", "s3_region", "s3_endpoint", "s3_path",
             "ftp_host", "ftp_port", "ftp_user", "ftp_path",
-            "date_from", "date_to",
+            "date_from", "date_to", "organize_by_date", "max_files_per_cycle", "max_concurrent_transfers",
             "sync_interval", "min_file_age", "recursive_scan", "auto_start"
         ]
         updates = []
@@ -410,6 +460,10 @@ def update_task(task_id: int, data: Dict[str, Any]) -> bool:
                 val = data[f]
                 if f == "alias" and val:
                     val = str(val).strip().upper()
+                elif f in ("organize_by_date", "recursive_scan", "auto_start"):
+                    val = 1 if str(val) in ("1", "true", "True") else 0
+                elif f in ("max_files_per_cycle", "sync_interval", "min_file_age"):
+                    val = int(val or 0)
                 updates.append(f"{f} = ?")
                 params.append(val)
                 
@@ -611,6 +665,7 @@ def map_task_files(
 ) -> Tuple[int, int]:
     """
     Inserts newly discovered files for a specific task.
+    - Uses fast in-memory dictionary lookup instead of 25k individual SQL queries.
     - If min_age_seconds > 0, skips files created/modified within that threshold
       (e.g. 2 minutes) so interrogator files are not read while being written.
     - If date_from and/or date_to are provided, only files within that range are processed.
@@ -618,6 +673,9 @@ def map_task_files(
     Returns (new_files_count, updated_files_count).
     """
     items_to_process = files_data if files_data is not None else (discovered_files or [])
+    if not items_to_process:
+        return 0, 0
+
     new_count = 0
     updated_count = 0
     clean_alias = task_alias.strip().upper() if task_alias else None
@@ -628,6 +686,13 @@ def map_task_files(
     
     with get_db() as conn:
         cursor = conn.cursor()
+        # Fast bulk load of existing files for this task (takes ~30ms for 25k records)
+        cursor.execute("SELECT file_path, id, file_size, mod_time, status FROM files WHERE task_id = ?", (task_id,))
+        existing_map = {row["file_path"]: (row["id"], row["file_size"], row["mod_time"], row["status"]) for row in cursor.fetchall()}
+
+        new_rows = []
+        update_rows = []
+
         for item in items_to_process:
             path = item.get("Path")
             name = item.get("Name")
@@ -643,7 +708,6 @@ def map_task_files(
             if min_age_seconds > 0 and mod_dt is not None:
                 age_seconds = (now_utc - mod_dt).total_seconds()
                 if age_seconds < min_age_seconds:
-                    # File is currently being written or created within last 2 minutes; skip for now
                     continue
 
             # Date range filtering (date_from and/or date_to)
@@ -655,24 +719,29 @@ def map_task_files(
                 if dt_to is not None and mod_dt > dt_to:
                     continue
                 
-            cursor.execute("SELECT id, file_size, mod_time, status FROM files WHERE task_id = ? AND file_path = ?", (task_id, path))
-            existing = cursor.fetchone()
+            existing = existing_map.get(path)
             
             if existing is None:
-                cursor.execute("""
-                    INSERT INTO files (task_id, task_alias, file_path, file_name, file_size, mod_time, status)
-                    VALUES (?, ?, ?, ?, ?, ?, 'pending')
-                """, (task_id, clean_alias, path, name, size, mod_time))
-                new_count += 1
+                new_rows.append((task_id, clean_alias, path, name, size, mod_time))
             else:
-                # File already registered. Do NOT overwrite or reset unless allow_overwrite is True
-                if allow_overwrite and (existing["file_size"] != size or existing["mod_time"] != mod_time) and existing["status"] == "completed":
-                    cursor.execute("""
-                        UPDATE files 
-                        SET file_size = ?, mod_time = ?, status = 'pending', error_message = NULL, updated_at = CURRENT_TIMESTAMP
-                        WHERE id = ?
-                    """, (size, mod_time, existing["id"]))
-                    updated_count += 1
+                existing_id, ex_size, ex_mod_time, ex_status = existing
+                if allow_overwrite and (ex_size != size or ex_mod_time != mod_time) and ex_status == "completed":
+                    update_rows.append((size, mod_time, existing_id))
+
+        if new_rows:
+            cursor.executemany("""
+                INSERT INTO files (task_id, task_alias, file_path, file_name, file_size, mod_time, status)
+                VALUES (?, ?, ?, ?, ?, ?, 'pending')
+            """, new_rows)
+            new_count = len(new_rows)
+
+        if update_rows:
+            cursor.executemany("""
+                UPDATE files 
+                SET file_size = ?, mod_time = ?, status = 'pending', error_message = NULL, updated_at = CURRENT_TIMESTAMP
+                WHERE id = ?
+            """, update_rows)
+            updated_count = len(update_rows)
                     
     return new_count, updated_count
 
@@ -732,6 +801,16 @@ def get_files_by_ids(file_ids: List[int]) -> List[Dict[str, Any]]:
         cursor = conn.cursor()
         cursor.execute(f"SELECT * FROM files WHERE id IN ({placeholders})", file_ids)
         return [dict(row) for row in cursor.fetchall()]
+
+def get_file_by_path(file_path: str, task_id: Optional[int] = None) -> Optional[Dict[str, Any]]:
+    with get_db() as conn:
+        cursor = conn.cursor()
+        if task_id:
+            cursor.execute("SELECT * FROM files WHERE file_path = ? AND task_id = ? ORDER BY id DESC LIMIT 1", (file_path, task_id))
+        else:
+            cursor.execute("SELECT * FROM files WHERE file_path = ? ORDER BY id DESC LIMIT 1", (file_path,))
+        row = cursor.fetchone()
+        return dict(row) if row else None
 
 def get_all_task_aliases() -> List[Dict[str, Any]]:
     with get_db() as conn:
@@ -834,17 +913,22 @@ def get_files_paginated(
         total = cursor.fetchone()["total"]
         
         # Select items
-        select_sql = f"""
-            SELECT * FROM files 
-            {where_sql} 
-            ORDER BY 
-                CASE status 
+        if status and status != "all":
+            order_by = "ORDER BY id DESC"
+        else:
+            order_by = """ORDER BY 
+                (CASE status 
                     WHEN 'transferring' THEN 1 
                     WHEN 'error' THEN 2 
                     WHEN 'pending' THEN 3 
                     ELSE 4 
-                END, 
-                id DESC 
+                END), 
+                id DESC"""
+
+        select_sql = f"""
+            SELECT * FROM files 
+            {where_sql} 
+            {order_by}
             LIMIT ? OFFSET ?
         """
         cursor.execute(select_sql, params + [per_page, offset])

@@ -30,19 +30,37 @@ DEFAULT_SYNC_INTERVAL = 60  # seconds
 DEFAULT_AUTO_START = True
 
 from typing import List, Dict, Any
+import time
+
+_CACHE_TTL = 30.0
+_lan_ip_cache = {"ip": None, "ts": 0.0}
+_tailscale_ip_cache = {"ip": None, "ts": 0.0}
+_interfaces_cache = {"data": None, "ts": 0.0}
 
 def get_lan_ip() -> str:
-    """Returns the primary LAN IP address of the host machine for network access."""
+    """Returns the primary LAN IP address of the host machine for network access (cached 30s)."""
+    now = time.time()
+    if _lan_ip_cache["ip"] and (now - _lan_ip_cache["ts"] < _CACHE_TTL):
+        return _lan_ip_cache["ip"]
+
     import socket
+    ip = "127.0.0.1"
     try:
         with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
             s.connect(("8.8.8.8", 80))
-            return s.getsockname()[0]
+            ip = s.getsockname()[0]
     except Exception:
-        return "127.0.0.1"
+        pass
+    _lan_ip_cache["ip"] = ip
+    _lan_ip_cache["ts"] = now
+    return ip
 
 def get_tailscale_ip():
-    """Detects Tailscale IPv4 address if Tailscale is active on the host machine."""
+    """Detects Tailscale IPv4 address if Tailscale is active on the host machine (cached 30s)."""
+    now = time.time()
+    if _tailscale_ip_cache["ts"] > 0 and (now - _tailscale_ip_cache["ts"] < _CACHE_TTL):
+        return _tailscale_ip_cache["ip"]
+
     import subprocess
     import re
     # 1. Try tailscale CLI
@@ -50,7 +68,10 @@ def get_tailscale_ip():
         try:
             res = subprocess.run([ts_path, "ip", "-4"], capture_output=True, text=True, timeout=1)
             if res.returncode == 0 and res.stdout.strip():
-                return res.stdout.strip().split("\n")[0]
+                ip = res.stdout.strip().split("\n")[0]
+                _tailscale_ip_cache["ip"] = ip
+                _tailscale_ip_cache["ts"] = now
+                return ip
         except Exception:
             pass
     # 2. Try regex in ifconfig/ipconfig for 100.x.y.z
@@ -59,16 +80,25 @@ def get_tailscale_ip():
         res = subprocess.run(cmd, capture_output=True, text=True, timeout=1)
         m = re.search(r"(?:inet|IPv4[^\d]*)\s*(100\.\d{1,3}\.\d{1,3}\.\d{1,3})", res.stdout)
         if m:
-            return m.group(1)
+            ip = m.group(1)
+            _tailscale_ip_cache["ip"] = ip
+            _tailscale_ip_cache["ts"] = now
+            return ip
     except Exception:
         pass
+    _tailscale_ip_cache["ip"] = None
+    _tailscale_ip_cache["ts"] = now
     return None
 
 def get_all_network_interfaces() -> List[Dict[str, Any]]:
     """
     Discovers all active network IPv4 addresses on the host machine across macOS, Linux, and Windows.
-    Returns a structured list with interface names, IPs, categories, and direct browser URLs.
+    Returns a structured list with interface names, IPs, categories, and direct browser URLs (cached 30s).
     """
+    now = time.time()
+    if _interfaces_cache["data"] is not None and (now - _interfaces_cache["ts"] < _CACHE_TTL):
+        return _interfaces_cache["data"]
+
     import subprocess
     import re
 
@@ -163,4 +193,6 @@ def get_all_network_interfaces() -> List[Dict[str, Any]]:
         })
 
     enriched.sort(key=lambda x: x["sort_order"])
+    _interfaces_cache["data"] = enriched
+    _interfaces_cache["ts"] = now
     return enriched
